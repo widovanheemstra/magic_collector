@@ -3,7 +3,7 @@ import json
 import sqlite3
 import requests
 import os
-from flask import Flask, render_template, request, jsonify
+from flask import Flask, render_template, request, jsonify, redirect, url_for
 from dotenv import load_dotenv
 
 # Load environment variables from .env file
@@ -214,7 +214,57 @@ def init_db():
     except sqlite3.OperationalError:
         # Column already exists, ignore
         pass
-    
+
+    # Collection groups: every user_collection row belongs to exactly one group.
+    # A group is either pinned to a set (set_code non-null, unique) or custom (set_code null).
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS collection_groups (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            image_url TEXT,
+            set_code TEXT UNIQUE,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (set_code) REFERENCES sets (code)
+        )
+    ''')
+
+    # Ensure the default "My Collection" group exists (id captured for migration below).
+    cursor.execute("SELECT id FROM collection_groups WHERE set_code IS NULL AND name = 'My Collection'")
+    row = cursor.fetchone()
+    if row:
+        default_group_id = row[0]
+    else:
+        cursor.execute("INSERT INTO collection_groups (name) VALUES ('My Collection')")
+        default_group_id = cursor.lastrowid
+
+    # Migrate user_collection to include group_id with a new uniqueness constraint.
+    # SQLite cannot ALTER constraints, so rebuild the table when group_id is missing.
+    cursor.execute("PRAGMA table_info(user_collection)")
+    uc_cols = [r[1] for r in cursor.fetchall()]
+    if 'group_id' not in uc_cols:
+        cursor.execute('''
+            CREATE TABLE user_collection_new (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                group_id INTEGER NOT NULL,
+                card_id TEXT,
+                quantity INTEGER DEFAULT 1,
+                is_foil BOOLEAN DEFAULT FALSE,
+                added_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (card_id) REFERENCES cards (id),
+                FOREIGN KEY (group_id) REFERENCES collection_groups (id) ON DELETE CASCADE,
+                UNIQUE(group_id, card_id, is_foil)
+            )
+        ''')
+        cursor.execute(
+            'INSERT INTO user_collection_new (id, group_id, card_id, quantity, is_foil, added_at, updated_at) '
+            'SELECT id, ?, card_id, quantity, is_foil, added_at, updated_at FROM user_collection',
+            (default_group_id,)
+        )
+        cursor.execute('DROP TABLE user_collection')
+        cursor.execute('ALTER TABLE user_collection_new RENAME TO user_collection')
+
     conn.commit()
     conn.close()
 
@@ -319,23 +369,72 @@ def save_prices_history(cursor, card_id, prices_data):
                     VALUES (?, ?, ?, ?)
                 ''', (card_id, price_type, str(price_value), currency))
 
-def get_collection_quantity(card_id, is_foil=False):
-    """Get the quantity of a card in the user's collection"""
+def get_default_group_id():
+    """Return the id of the default 'My Collection' group (created in init_db)."""
     conn = sqlite3.connect(DATABASE)
     cursor = conn.cursor()
-    cursor.execute('SELECT quantity FROM user_collection WHERE card_id = ? AND is_foil = ?', (card_id, is_foil))
+    cursor.execute("SELECT id FROM collection_groups WHERE set_code IS NULL AND name = 'My Collection'")
+    row = cursor.fetchone()
+    conn.close()
+    return row[0] if row else None
+
+def get_or_create_set_group(set_code):
+    """Get or create the collection group pinned to a set. Returns (group_id, created)."""
+    conn = sqlite3.connect(DATABASE)
+    cursor = conn.cursor()
+    cursor.execute('SELECT id FROM collection_groups WHERE set_code = ?', (set_code,))
+    row = cursor.fetchone()
+    if row:
+        conn.close()
+        return row[0], False
+    cursor.execute('SELECT name, icon_svg_uri FROM sets WHERE code = ?', (set_code,))
+    set_row = cursor.fetchone()
+    name = set_row[0] if set_row else set_code.upper()
+    icon = set_row[1] if set_row else None
+    cursor.execute(
+        'INSERT INTO collection_groups (name, image_url, set_code) VALUES (?, ?, ?)',
+        (name, icon, set_code)
+    )
+    group_id = cursor.lastrowid
+    conn.commit()
+    conn.close()
+    return group_id, True
+
+def get_collection_quantity(card_id, is_foil=False, group_id=None):
+    """Total quantity of a card across all groups, or scoped to one group."""
+    conn = sqlite3.connect(DATABASE)
+    cursor = conn.cursor()
+    if group_id is None:
+        cursor.execute(
+            'SELECT COALESCE(SUM(quantity), 0) FROM user_collection WHERE card_id = ? AND is_foil = ?',
+            (card_id, is_foil)
+        )
+    else:
+        cursor.execute(
+            'SELECT quantity FROM user_collection WHERE card_id = ? AND is_foil = ? AND group_id = ?',
+            (card_id, is_foil, group_id)
+        )
     result = cursor.fetchone()
     conn.close()
-    return result[0] if result else 0
+    return (result[0] if result else 0) or 0
 
-def get_collection_totals(card_id):
-    """Get both foil and non-foil quantities for a card"""
+def get_collection_totals(card_id, group_id=None):
+    """Both foil and non-foil quantities for a card (summed across groups by default)."""
     conn = sqlite3.connect(DATABASE)
     cursor = conn.cursor()
-    cursor.execute('SELECT is_foil, quantity FROM user_collection WHERE card_id = ?', (card_id,))
+    if group_id is None:
+        cursor.execute(
+            'SELECT is_foil, COALESCE(SUM(quantity), 0) FROM user_collection WHERE card_id = ? GROUP BY is_foil',
+            (card_id,)
+        )
+    else:
+        cursor.execute(
+            'SELECT is_foil, quantity FROM user_collection WHERE card_id = ? AND group_id = ?',
+            (card_id, group_id)
+        )
     results = cursor.fetchall()
     conn.close()
-    
+
     non_foil = 0
     foil = 0
     for is_foil, quantity in results:
@@ -343,57 +442,72 @@ def get_collection_totals(card_id):
             foil = quantity
         else:
             non_foil = quantity
-    
     return non_foil, foil
 
-def add_to_collection(card_id, quantity, is_foil=False):
-    """Add or update a card in the user's collection"""
+def add_to_collection(card_id, quantity, is_foil=False, group_id=None):
+    """Increment a card's quantity in a group (default: 'My Collection')."""
+    if group_id is None:
+        group_id = get_default_group_id()
     conn = sqlite3.connect(DATABASE)
     cursor = conn.cursor()
-    
-    # Check if card already exists in collection with this foil status
-    cursor.execute('SELECT quantity FROM user_collection WHERE card_id = ? AND is_foil = ?', (card_id, is_foil))
+    cursor.execute(
+        'SELECT quantity FROM user_collection WHERE card_id = ? AND is_foil = ? AND group_id = ?',
+        (card_id, is_foil, group_id)
+    )
     existing = cursor.fetchone()
-    
     if existing:
-        # Update existing quantity
         new_quantity = existing[0] + quantity
-        cursor.execute('''
-            UPDATE user_collection 
-            SET quantity = ?, updated_at = CURRENT_TIMESTAMP 
-            WHERE card_id = ? AND is_foil = ?
-        ''', (new_quantity, card_id, is_foil))
+        cursor.execute(
+            'UPDATE user_collection SET quantity = ?, updated_at = CURRENT_TIMESTAMP '
+            'WHERE card_id = ? AND is_foil = ? AND group_id = ?',
+            (new_quantity, card_id, is_foil, group_id)
+        )
     else:
-        # Add new card to collection
-        cursor.execute('''
-            INSERT INTO user_collection (card_id, quantity, is_foil)
-            VALUES (?, ?, ?)
-        ''', (card_id, quantity, is_foil))
-    
+        cursor.execute(
+            'INSERT INTO user_collection (group_id, card_id, quantity, is_foil) VALUES (?, ?, ?, ?)',
+            (group_id, card_id, quantity, is_foil)
+        )
     conn.commit()
     conn.close()
     return True
 
-def update_collection_quantity(card_id, quantity, is_foil=False):
-    """Update the exact quantity of a card in the user's collection"""
+def ensure_in_collection(card_id, is_foil, group_id, min_quantity=1):
+    """Insert at min_quantity only if absent. Used for idempotent 'add full set'."""
     conn = sqlite3.connect(DATABASE)
     cursor = conn.cursor()
-    
+    cursor.execute(
+        'INSERT OR IGNORE INTO user_collection (group_id, card_id, quantity, is_foil) VALUES (?, ?, ?, ?)',
+        (group_id, card_id, min_quantity, is_foil)
+    )
+    inserted = cursor.rowcount > 0
+    conn.commit()
+    conn.close()
+    return inserted
+
+def update_collection_quantity(card_id, quantity, is_foil=False, group_id=None):
+    """Set the exact quantity of a card in a group; quantity<=0 removes the row."""
+    if group_id is None:
+        group_id = get_default_group_id()
+    conn = sqlite3.connect(DATABASE)
+    cursor = conn.cursor()
     if quantity <= 0:
-        # Remove card from collection if quantity is 0 or negative
-        cursor.execute('DELETE FROM user_collection WHERE card_id = ? AND is_foil = ?', (card_id, is_foil))
+        cursor.execute(
+            'DELETE FROM user_collection WHERE card_id = ? AND is_foil = ? AND group_id = ?',
+            (card_id, is_foil, group_id)
+        )
         conn.commit()
         conn.close()
         return 0
-    else:
-        # Update or insert the card with the exact quantity
-        cursor.execute('''
-            INSERT OR REPLACE INTO user_collection (card_id, quantity, is_foil, updated_at)
-            VALUES (?, ?, ?, CURRENT_TIMESTAMP)
-        ''', (card_id, quantity, is_foil))
-        conn.commit()
-        conn.close()
-        return quantity
+    cursor.execute(
+        'INSERT INTO user_collection (group_id, card_id, quantity, is_foil, updated_at) '
+        'VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP) '
+        'ON CONFLICT(group_id, card_id, is_foil) DO UPDATE SET '
+        'quantity = excluded.quantity, updated_at = CURRENT_TIMESTAMP',
+        (group_id, card_id, quantity, is_foil)
+    )
+    conn.commit()
+    conn.close()
+    return quantity
 
 def get_card_price(card_data, is_foil=False):
     """Extract the appropriate USD price from card data based on foil status"""
@@ -671,12 +785,13 @@ def update_collection_quantity_route():
     card_id = data.get('card_id')
     quantity = int(data.get('quantity', 0))
     is_foil = data.get('is_foil', False)
-    
+    group_id = data.get('group_id')
+
     if not card_id:
         return jsonify({'success': False, 'message': 'Invalid card ID'})
-    
+
     try:
-        new_quantity = update_collection_quantity(card_id, quantity, is_foil)
+        new_quantity = update_collection_quantity(card_id, quantity, is_foil, group_id=group_id)
         non_foil_qty, foil_qty = get_collection_totals(card_id)
         return jsonify({
             'success': True, 
@@ -777,35 +892,104 @@ def update_collection_prices():
 
 @app.route('/collection')
 def view_collection():
-    """View user's collection"""
+    """List all collection groups with aggregate stats and the global total value."""
     conn = sqlite3.connect(DATABASE)
     cursor = conn.cursor()
-    
+
+    cursor.execute('''
+        SELECT g.id, g.name, g.image_url, g.set_code, g.updated_at,
+               s.icon_svg_uri,
+               COUNT(uc.id) AS rows_in_group,
+               COALESCE(SUM(uc.quantity), 0) AS total_qty
+        FROM collection_groups g
+        LEFT JOIN sets s ON s.code = g.set_code
+        LEFT JOIN user_collection uc ON uc.group_id = g.id
+        GROUP BY g.id
+        ORDER BY (g.set_code IS NULL) DESC, g.updated_at DESC
+    ''')
+    raw_groups = cursor.fetchall()
+
+    # Per-group value: sum each row's price * quantity.
+    groups = []
+    total_collection_value = 0
+    for g_id, name, image_url, set_code, updated_at, set_icon, row_count, total_qty in raw_groups:
+        cursor.execute('''
+            SELECT c.prices, uc.quantity, uc.is_foil
+            FROM user_collection uc JOIN cards c ON c.id = uc.card_id
+            WHERE uc.group_id = ?
+        ''', (g_id,))
+        group_value = 0.0
+        for prices_json, qty, is_foil in cursor.fetchall():
+            # Reuse get_card_price by faking a card_data tuple with prices at index 34.
+            fake = [None] * 35
+            fake[34] = prices_json
+            price = get_card_price(fake, bool(is_foil))
+            if price and qty:
+                group_value += price * qty
+        total_collection_value += group_value
+        groups.append({
+            'id': g_id,
+            'name': name,
+            'image_url': image_url or set_icon,
+            'set_code': set_code,
+            'updated_at': updated_at,
+            'row_count': row_count,
+            'total_qty': total_qty,
+            'value': group_value,
+        })
+
+    conn.close()
+    default_group_id = get_default_group_id()
+    return render_template('collection.html', groups=groups,
+                           total_collection_value=total_collection_value,
+                           default_group_id=default_group_id)
+
+@app.route('/collection/<int:group_id>')
+def view_collection_group(group_id):
+    """Show all cards in a single collection group."""
+    conn = sqlite3.connect(DATABASE)
+    cursor = conn.cursor()
+    cursor.execute('''
+        SELECT g.id, g.name, g.image_url, g.set_code, s.icon_svg_uri
+        FROM collection_groups g
+        LEFT JOIN sets s ON s.code = g.set_code
+        WHERE g.id = ?
+    ''', (group_id,))
+    g_row = cursor.fetchone()
+    if not g_row:
+        conn.close()
+        return redirect(url_for('view_collection'))
+
     cursor.execute('''
         SELECT c.*, uc.quantity, uc.is_foil, uc.added_at, uc.updated_at
-        FROM user_collection uc
-        JOIN cards c ON uc.card_id = c.id
+        FROM user_collection uc JOIN cards c ON uc.card_id = c.id
+        WHERE uc.group_id = ?
         ORDER BY uc.updated_at DESC
-    ''')
+    ''', (group_id,))
     collection = cursor.fetchall()
-    
-    # Add price information and total value to each card
-    collection_with_prices = []
-    total_collection_value = 0
-    
-    for card_data in collection:
-        price = get_card_price(card_data, card_data[42])  # is_foil is at index 42 (cards: 0-40, uc.quantity: 41, uc.is_foil: 42)
-        quantity = card_data[41]  # quantity is at index 41
-        total_value = price * quantity if price and quantity else None
-        collection_with_prices.append((*card_data, price, total_value))
-        
-        # Add to total collection value
-        if total_value:
-            total_collection_value += total_value
-    
     conn.close()
-    
-    return render_template('collection.html', collection=collection_with_prices, total_collection_value=total_collection_value)
+
+    collection_with_prices = []
+    total_value = 0
+    for card_data in collection:
+        price = get_card_price(card_data, card_data[42])
+        quantity = card_data[41]
+        line_total = price * quantity if price and quantity else None
+        collection_with_prices.append((*card_data, price, line_total))
+        if line_total:
+            total_value += line_total
+
+    group = {
+        'id': g_row[0],
+        'name': g_row[1],
+        'image_url': g_row[2] or g_row[4],
+        'set_code': g_row[3],
+        'is_default': g_row[0] == get_default_group_id(),
+    }
+    return render_template('group_detail.html',
+                           group=group,
+                           collection=collection_with_prices,
+                           total_collection_value=total_value)
 
 @app.route('/search')
 def search_cards():
@@ -1180,6 +1364,107 @@ def fetch_cards(set_code):
         return jsonify({'success': True, 'message': f'Fetched and stored {len(cards_data)} cards for set {set_code}'})
     else:
         return jsonify({'success': False, 'message': f'Failed to fetch cards for set {set_code}'})
+
+@app.route('/add_set_to_collection/<set_code>', methods=['POST'])
+def add_set_to_collection(set_code):
+    """Add 1x of every card in a set to a pinned collection group.
+
+    Auto-fetches cards from Scryfall if they aren't loaded locally yet.
+    Idempotent: cards already present in the group are left alone.
+    """
+    try:
+        conn = sqlite3.connect(DATABASE)
+        cursor = conn.cursor()
+        cursor.execute('SELECT name, foil_only FROM sets WHERE code = ?', (set_code,))
+        set_row = cursor.fetchone()
+        conn.close()
+        if not set_row:
+            return jsonify({'success': False, 'message': f'Set {set_code} not found. Refresh sets first.'})
+        foil_only = bool(set_row[1])
+
+        # Ensure cards are loaded locally; auto-fetch from Scryfall if not.
+        conn = sqlite3.connect(DATABASE)
+        cursor = conn.cursor()
+        cursor.execute('SELECT COUNT(*) FROM cards WHERE set_code = ?', (set_code,))
+        card_count = cursor.fetchone()[0]
+        conn.close()
+        if card_count == 0:
+            cards_data = get_cards_by_set(set_code)
+            if not cards_data:
+                return jsonify({'success': False, 'message': f'No cards available for set {set_code} from Scryfall'})
+            store_cards(cards_data, set_code)
+
+        group_id, _created = get_or_create_set_group(set_code)
+
+        conn = sqlite3.connect(DATABASE)
+        cursor = conn.cursor()
+        cursor.execute('SELECT id FROM cards WHERE set_code = ?', (set_code,))
+        card_ids = [row[0] for row in cursor.fetchall()]
+        conn.close()
+
+        added = 0
+        for card_id in card_ids:
+            if ensure_in_collection(card_id, is_foil=foil_only, group_id=group_id, min_quantity=1):
+                added += 1
+
+        return jsonify({
+            'success': True,
+            'group_id': group_id,
+            'added': added,
+            'already_present': len(card_ids) - added,
+            'message': f'Added {added} new card(s) to "{set_row[0]}" group; {len(card_ids) - added} already present.'
+        })
+    except Exception as e:
+        return jsonify({'success': False, 'message': f'Error adding set to collection: {str(e)}'})
+
+@app.route('/collection_groups', methods=['POST'])
+def create_collection_group():
+    """Create a custom (non-set) collection group."""
+    name = (request.form.get('name') or '').strip()
+    image_url = (request.form.get('image_url') or '').strip() or None
+    if not name:
+        return redirect(url_for('view_collection'))
+    conn = sqlite3.connect(DATABASE)
+    cursor = conn.cursor()
+    cursor.execute(
+        'INSERT INTO collection_groups (name, image_url) VALUES (?, ?)',
+        (name, image_url)
+    )
+    group_id = cursor.lastrowid
+    conn.commit()
+    conn.close()
+    return redirect(url_for('view_collection_group', group_id=group_id))
+
+@app.route('/collection_groups/<int:group_id>/update', methods=['POST'])
+def update_collection_group(group_id):
+    """Rename a group or override its image."""
+    name = (request.form.get('name') or '').strip()
+    image_url = (request.form.get('image_url') or '').strip() or None
+    if not name:
+        return redirect(url_for('view_collection_group', group_id=group_id))
+    conn = sqlite3.connect(DATABASE)
+    cursor = conn.cursor()
+    cursor.execute(
+        'UPDATE collection_groups SET name = ?, image_url = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
+        (name, image_url, group_id)
+    )
+    conn.commit()
+    conn.close()
+    return redirect(url_for('view_collection_group', group_id=group_id))
+
+@app.route('/collection_groups/<int:group_id>/delete', methods=['POST'])
+def delete_collection_group(group_id):
+    """Delete a group and all of its collection rows. The default group is protected."""
+    default_id = get_default_group_id()
+    if group_id == default_id:
+        return jsonify({'success': False, 'message': 'The default "My Collection" group cannot be deleted.'}), 400
+    conn = sqlite3.connect(DATABASE)
+    cursor = conn.cursor()
+    cursor.execute('DELETE FROM user_collection WHERE group_id = ?', (group_id,))
+    cursor.execute('DELETE FROM collection_groups WHERE id = ?', (group_id,))
+    conn.commit()
+    conn.close()
+    return jsonify({'success': True, 'message': 'Group deleted'})
 
 @app.route('/settings')
 def view_settings():

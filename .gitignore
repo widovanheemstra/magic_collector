@@ -5,3 +5,7 @@ magic_collector.db
 .idea/
 .DS_Store
 .env
+.venv/
+venv/
+__pycache__/
+.vscode/

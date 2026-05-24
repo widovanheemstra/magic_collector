@@ -29,7 +29,7 @@
         </div>
 
         <form id="editDeckForm">
-            <input type="hidden" id="deckId" value="{{ deck.id }}">
+            <input type="hidden" id="deckId" value="{{ deck.id if deck else '' }}">
             
             <!-- Deck Info -->
             <div class="card mb-4">
@@ -203,7 +203,7 @@ function saveDeck() {
 function cancelEdit() {
     if (confirm('Are you sure you want to cancel? Any unsaved changes will be lost.')) {
         const deckId = document.getElementById('deckId').value;
-        if (deckId) {
+        if (deckId && deckId !== 'None') {
             window.location.href = `/deck/${deckId}`;
         } else {
             window.location.href = '/decks';

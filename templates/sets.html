@@ -11,13 +11,23 @@
                 <i class="fas fa-sync"></i> Refresh Sets
             </button>
         </div>
+        {% if sets %}
+        <div class="mb-3">
+            <div class="input-group">
+                <span class="input-group-text"><i class="fas fa-search"></i></span>
+                <input type="search" id="setSearch" class="form-control" placeholder="Filter by set name or code..." oninput="filterSets()" autocomplete="off">
+                <button class="btn btn-outline-secondary" type="button" onclick="document.getElementById('setSearch').value=''; filterSets();">Clear</button>
+            </div>
+            <small class="text-muted"><span id="setMatchCount">{{ sets|length }}</span> of {{ sets|length }} sets shown</small>
+        </div>
+        {% endif %}
     </div>
 </div>
 
-<div class="row">
+<div class="row" id="setsGrid">
     {% if sets %}
         {% for set in sets %}
-        <div class="col-md-6 col-lg-4 mb-4">
+        <div class="col-md-6 col-lg-4 mb-4 set-tile" data-set-name="{{ set[2]|lower }}" data-set-code="{{ set[1]|lower }}">
             <div class="card set-card h-100">
                 <div class="card-body">
                     <div class="d-flex justify-content-between align-items-start mb-2">
@@ -43,7 +53,7 @@
                     </p>
                 </div>
                 <div class="card-footer">
-                    <div class="btn-group w-100" role="group">
+                    <div class="btn-group w-100 mb-2" role="group">
                         <a href="/cards/{{ set[1] }}" class="btn btn-outline-primary">
                             <i class="fas fa-cards-blank"></i> View Cards
                         </a>
@@ -51,6 +61,9 @@
                             <i class="fas fa-download"></i> Fetch Cards
                         </button>
                     </div>
+                    <button class="btn btn-success w-100" onclick="addSetToCollection('{{ set[1] }}', this)">
+                        <i class="fas fa-plus"></i> Add to Collection
+                    </button>
                 </div>
             </div>
         </div>
@@ -99,4 +112,38 @@
     </div>
 </div>
 {% endif %}
+
+<script>
+function filterSets() {
+    const q = document.getElementById('setSearch').value.trim().toLowerCase();
+    let shown = 0;
+    document.querySelectorAll('#setsGrid .set-tile').forEach(tile => {
+        const match = !q || tile.dataset.setName.includes(q) || tile.dataset.setCode.includes(q);
+        tile.style.display = match ? '' : 'none';
+        if (match) shown++;
+    });
+    const counter = document.getElementById('setMatchCount');
+    if (counter) counter.textContent = shown;
+}
+
+function addSetToCollection(setCode, btn) {
+    if (!confirm('Add 1x of every card in set ' + setCode + ' to your collection? Cards will be fetched from Scryfall if not yet loaded.')) return;
+    const original = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Adding...';
+    fetch('/add_set_to_collection/' + setCode, { method: 'POST' })
+        .then(r => r.json())
+        .then(d => {
+            alert(d.message || (d.success ? 'Done' : 'Failed'));
+            btn.disabled = false;
+            btn.innerHTML = original;
+            if (d.success && d.group_id) window.location = '/collection/' + d.group_id;
+        })
+        .catch(e => {
+            alert('Error: ' + e.message);
+            btn.disabled = false;
+            btn.innerHTML = original;
+        });
+}
+</script>
 {% endblock %}

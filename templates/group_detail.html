@@ -1,0 +1,142 @@
+{% extends "base.html" %}
+
+{% block title %}{{ group.name }} - Magic Collector{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-12">
+        <nav aria-label="breadcrumb" class="mb-2">
+            <ol class="breadcrumb">
+                <li class="breadcrumb-item"><a href="{{ url_for('view_collection') }}">My Collection</a></li>
+                <li class="breadcrumb-item active">{{ group.name }}</li>
+            </ol>
+        </nav>
+        <div class="d-flex justify-content-between align-items-center mb-4">
+            <div class="d-flex align-items-center">
+                {% if group.image_url %}
+                <img src="{{ group.image_url }}" alt="" style="max-height: 48px; max-width: 48px; object-fit: contain;" class="me-3">
+                {% endif %}
+                <div>
+                    <h1 class="mb-0">{{ group.name }}</h1>
+                    <p class="text-muted mb-0">
+                        {% if group.set_code %}<span class="badge bg-secondary">Set: {{ group.set_code }}</span>{% else %}<span class="badge bg-info">Custom</span>{% endif %}
+                        {% if group.is_default %}<span class="badge bg-primary">Default</span>{% endif %}
+                        · {{ collection|length }} card(s)
+                    </p>
+                </div>
+            </div>
+            <div>
+                <button class="btn btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#editGroupModal"><i class="fas fa-pen"></i> Edit</button>
+                {% if not group.is_default %}
+                <button class="btn btn-outline-danger" onclick="deleteGroup({{ group.id }})"><i class="fas fa-trash"></i> Delete</button>
+                {% endif %}
+            </div>
+        </div>
+        {% if total_collection_value %}
+        <div class="alert alert-success">
+            <h5 class="alert-heading mb-0"><i class="fas fa-dollar-sign"></i> Group Value: ${{ "%.2f"|format(total_collection_value) }}</h5>
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+{% if collection %}
+<div class="row">
+    {% for card in collection %}
+    <div class="col-md-6 col-lg-4 mb-4">
+        <div class="card h-100">
+            <div class="card-img-top bg-light d-flex justify-content-center align-items-center" style="min-height: 200px;">
+                {% if card[37] %}
+                {% set image_data = card[37]|from_json %}
+                <img src="{{ image_data.normal or image_data.small or '' }}" class="card-image" alt="{{ card[1] }}" style="max-height: 200px; object-fit: contain;">
+                {% else %}
+                <i class="fas fa-image fa-3x text-muted"></i>
+                {% endif %}
+            </div>
+            <div class="card-body d-flex flex-column">
+                <h6 class="card-title">
+                    <a href="/card/{{ card[0] }}" class="text-decoration-none text-dark">{{ card[1] }}</a>
+                </h6>
+                <p class="card-text text-muted small">{{ card[4] }}</p>
+                <div class="mt-auto">
+                    <div class="d-flex justify-content-between align-items-center mb-2">
+                        <span class="badge bg-{% if card[42] %}warning{% else %}primary{% endif %}" id="quantity-badge-{{ card[0] }}-{{ card[42] }}">
+                            {{ card[41] }} {% if card[42] %}foil{% else %}regular{% endif %}
+                        </span>
+                        {% if card[45] %}<span class="badge bg-success">${{ "%.2f"|format(card[45]) }}</span>{% endif %}
+                    </div>
+                    {% if card[46] %}
+                    <div class="mb-2"><small class="text-success fw-bold">Total: ${{ "%.2f"|format(card[46]) }}</small></div>
+                    {% endif %}
+                    <div class="input-group input-group-sm">
+                        <button class="btn btn-outline-secondary" type="button" onclick="adjust('{{ card[0] }}', {{ card[42]|lower }}, -1)"><i class="fas fa-minus"></i></button>
+                        <input type="number" class="form-control text-center" id="quantity-{{ card[0] }}-{{ card[42] }}" value="{{ card[41] }}" min="0" max="999" style="max-width: 80px;">
+                        <button class="btn btn-outline-secondary" type="button" onclick="adjust('{{ card[0] }}', {{ card[42]|lower }}, 1)"><i class="fas fa-plus"></i></button>
+                        <button class="btn btn-primary btn-sm" type="button" onclick="commitQty('{{ card[0] }}', {{ card[42]|lower }})">Update</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+{% else %}
+<div class="alert alert-info text-center">
+    <p class="mb-0">No cards in this group yet.</p>
+</div>
+{% endif %}
+
+<div class="modal fade" id="editGroupModal" tabindex="-1">
+  <div class="modal-dialog">
+    <form class="modal-content" method="POST" action="{{ url_for('update_collection_group', group_id=group.id) }}">
+      <div class="modal-header">
+        <h5 class="modal-title">Edit Group</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <div class="mb-3">
+          <label class="form-label">Name</label>
+          <input type="text" name="name" class="form-control" value="{{ group.name }}" required>
+        </div>
+        <div class="mb-3">
+          <label class="form-label">Image URL (override)</label>
+          <input type="url" name="image_url" class="form-control" value="{{ group.image_url or '' }}" placeholder="https://...">
+          <div class="form-text">Leave blank to use the auto-default (set icon for set groups).</div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button type="submit" class="btn btn-primary">Save</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script>
+function adjust(cardId, isFoil, delta) {
+    const input = document.getElementById('quantity-' + cardId + '-' + isFoil);
+    const v = (parseInt(input.value) || 0) + delta;
+    input.value = Math.max(0, Math.min(999, v));
+}
+function commitQty(cardId, isFoil) {
+    const input = document.getElementById('quantity-' + cardId + '-' + isFoil);
+    const qty = parseInt(input.value) || 0;
+    fetch('/update_collection_quantity', {
+        method: 'POST', headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ card_id: cardId, quantity: qty, is_foil: isFoil, group_id: {{ group.id }} })
+    }).then(r => r.json()).then(d => {
+        if (!d.success) { alert(d.message); return; }
+        if (qty === 0) location.reload();
+    });
+}
+function deleteGroup(id) {
+    if (!confirm('Delete this group and all its card entries?')) return;
+    fetch('/collection_groups/' + id + '/delete', { method: 'POST' })
+        .then(r => r.json())
+        .then(d => {
+            if (d.success) window.location = '{{ url_for("view_collection") }}';
+            else alert(d.message);
+        });
+}
+</script>
+{% endblock %}

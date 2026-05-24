@@ -5,251 +5,111 @@
 {% block content %}
 <div class="row">
     <div class="col-12">
-        <div class="mb-4">
-            <div class="d-flex justify-content-between align-items-center">
-                <div>
-                    <h1><i class="fas fa-collection"></i> My Collection</h1>
-                    <p class="text-muted">Total cards: {{ collection|length }}</p>
-                </div>
-                <div>
-                    <button class="btn btn-primary" onclick="updateCollectionPrices()" id="updateButton">
-                        <i class="fas fa-sync-alt"></i> Update Prices
-                    </button>
-                </div>
+        <div class="d-flex justify-content-between align-items-center mb-4">
+            <div>
+                <h1><i class="fas fa-layer-group"></i> My Collection</h1>
+                <p class="text-muted mb-0">{{ groups|length }} group(s)</p>
             </div>
-            {% if total_collection_value %}
-            <div class="alert alert-success">
-                <h4 class="alert-heading"><i class="fas fa-dollar-sign"></i> Total Collection Value</h4>
-                <h2 class="mb-0">${{ "%.2f"|format(total_collection_value) }}</h2>
+            <div>
+                <button class="btn btn-outline-primary me-2" data-bs-toggle="modal" data-bs-target="#newGroupModal">
+                    <i class="fas fa-plus"></i> New Custom Group
+                </button>
+                <button class="btn btn-primary" onclick="updateCollectionPrices()" id="updateButton">
+                    <i class="fas fa-sync-alt"></i> Update Prices
+                </button>
             </div>
-            {% endif %}
         </div>
+        {% if total_collection_value %}
+        <div class="alert alert-success">
+            <h4 class="alert-heading"><i class="fas fa-dollar-sign"></i> Total Collection Value</h4>
+            <h2 class="mb-0">${{ "%.2f"|format(total_collection_value) }}</h2>
+        </div>
+        {% endif %}
     </div>
 </div>
 
-{% if collection %}
 <div class="row">
-    {% for card in collection %}
+    {% for g in groups %}
     <div class="col-md-6 col-lg-4 mb-4">
         <div class="card h-100">
-            <div class="card-img-top bg-light d-flex justify-content-center align-items-center" style="min-height: 200px;">
-                {% if card[37] %}
-                {% set image_data = card[37]|from_json %}
-                <img src="{{ image_data.normal or image_data.small or '' }}" class="card-image" alt="{{ card[1] }}" style="max-height: 200px; object-fit: contain;">
+            <div class="card-img-top bg-light d-flex justify-content-center align-items-center" style="min-height: 160px; padding: 1rem;">
+                {% if g.image_url %}
+                <img src="{{ g.image_url }}" alt="{{ g.name }}" style="max-height: 140px; max-width: 100%; object-fit: contain;">
                 {% else %}
-                <i class="fas fa-image fa-3x text-muted"></i>
+                <i class="fas fa-folder-open fa-4x text-muted"></i>
                 {% endif %}
             </div>
             <div class="card-body d-flex flex-column">
-                <h6 class="card-title">
-                    <a href="/card/{{ card[0] }}" class="text-decoration-none text-dark">
-                        {{ card[1] }}
+                <h5 class="card-title">
+                    <a href="{{ url_for('view_collection_group', group_id=g.id) }}" class="text-decoration-none text-dark">
+                        {{ g.name }}
                     </a>
-                </h6>
-                <p class="card-text text-muted small">{{ card[4] }}</p>
+                </h5>
+                <p class="text-muted small mb-2">
+                    {% if g.set_code %}<span class="badge bg-secondary">Set: {{ g.set_code }}</span>{% else %}<span class="badge bg-info">Custom</span>{% endif %}
+                    {% if g.id == default_group_id %}<span class="badge bg-primary">Default</span>{% endif %}
+                </p>
                 <div class="mt-auto">
-                    <div class="d-flex justify-content-between align-items-center mb-2">
-                        <span class="badge bg-{% if card[42] %}warning{% else %}primary{% endif %}" id="quantity-badge-{{ card[0] }}-{{ card[42] }}">
-                            {{ card[41] }} {% if card[42] %}foil{% else %}regular{% endif %}
-                        </span>
-                        {% if card[45] %}
-                        <span class="badge bg-success">
-                            ${{ "%.2f"|format(card[45]) }}
-                        </span>
-                        {% endif %}
+                    <div class="d-flex justify-content-between small text-muted mb-2">
+                        <span>{{ g.row_count }} distinct · {{ g.total_qty }} total</span>
+                        {% if g.value %}<span class="text-success">${{ "%.2f"|format(g.value) }}</span>{% endif %}
                     </div>
-                    {% if card[46] %}
-                    <div class="mb-2">
-                        <small class="text-success fw-bold">
-                            Total Value: ${{ "%.2f"|format(card[46]) }}
-                        </small>
-                    </div>
-                    {% endif %}
-                    
-                    <!-- Quantity Management -->
-                    <div class="quantity-controls">
-                        <div class="input-group input-group-sm">
-                            <button class="btn btn-outline-secondary" type="button" onclick="decreaseQuantity('{{ card[0] }}', {{ card[42]|lower }})">
-                                <i class="fas fa-minus"></i>
-                            </button>
-                            <input type="number" class="form-control text-center" id="quantity-{{ card[0] }}-{{ card[42] }}" 
-                                   value="{{ card[41] }}" min="0" max="999" style="max-width: 80px;">
-                            <button class="btn btn-outline-secondary" type="button" onclick="increaseQuantity('{{ card[0] }}', {{ card[42]|lower }})">
-                                <i class="fas fa-plus"></i>
-                            </button>
-                            <button class="btn btn-primary btn-sm" type="button" onclick="updateQuantity('{{ card[0] }}', {{ card[42]|lower }})">
-                                Update
-                            </button>
-                        </div>
-                    </div>
-                    
-                    <div class="mt-2">
-                        <small class="text-muted">
-                            Added: {{ card[40]|replace('T', ' ')|replace('Z', '') }}
-                        </small>
-                    </div>
+                    <a href="{{ url_for('view_collection_group', group_id=g.id) }}" class="btn btn-outline-primary btn-sm w-100">Open</a>
                 </div>
             </div>
+        </div>
+    </div>
+    {% else %}
+    <div class="col-12">
+        <div class="alert alert-info text-center">
+            <h4><i class="fas fa-info-circle"></i> No groups yet</h4>
+            <p>Add a full set from the Sets page, or create a custom group.</p>
+            <a href="/sets" class="btn btn-primary"><i class="fas fa-layer-group"></i> Browse Sets</a>
         </div>
     </div>
     {% endfor %}
 </div>
-{% else %}
-<div class="row">
-    <div class="col-12">
-        <div class="alert alert-info text-center">
-            <h4><i class="fas fa-info-circle"></i> No Cards in Collection</h4>
-            <p>Start building your collection by browsing sets and adding cards!</p>
-            <a href="/sets" class="btn btn-primary">
-                <i class="fas fa-layer-group"></i> Browse Sets
-            </a>
-        </div>
-    </div>
-</div>
-{% endif %}
 
+<div class="modal fade" id="newGroupModal" tabindex="-1">
+  <div class="modal-dialog">
+    <form class="modal-content" method="POST" action="{{ url_for('create_collection_group') }}">
+      <div class="modal-header">
+        <h5 class="modal-title">New Custom Group</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <div class="mb-3">
+          <label class="form-label">Name</label>
+          <input type="text" name="name" class="form-control" required>
+        </div>
+        <div class="mb-3">
+          <label class="form-label">Image URL (optional)</label>
+          <input type="url" name="image_url" class="form-control" placeholder="https://...">
+          <div class="form-text">If left blank, the group will use a default icon until you add cards.</div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button type="submit" class="btn btn-primary">Create</button>
+      </div>
+    </form>
+  </div>
+</div>
 
 <script>
-function increaseQuantity(cardId, isFoil) {
-    const input = document.getElementById('quantity-' + cardId + '-' + isFoil);
-    const currentValue = parseInt(input.value) || 0;
-    input.value = Math.min(currentValue + 1, 999);
-}
-
-function decreaseQuantity(cardId, isFoil) {
-    const input = document.getElementById('quantity-' + cardId + '-' + isFoil);
-    const currentValue = parseInt(input.value) || 0;
-    input.value = Math.max(currentValue - 1, 0);
-}
-
-function updateQuantity(cardId, isFoil) {
-    const input = document.getElementById('quantity-' + cardId + '-' + isFoil);
-    const newQuantity = parseInt(input.value) || 0;
-    
-    if (newQuantity < 0) {
-        alert('Quantity cannot be negative');
-        return;
-    }
-    
-    fetch('/update_collection_quantity', {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-            card_id: cardId,
-            quantity: newQuantity,
-            is_foil: isFoil
-        })
-    })
-    .then(response => response.json())
-    .then(data => {
-        if (data.success) {
-            // Update the badge
-            const badge = document.getElementById('quantity-badge-' + cardId + '-' + isFoil);
-            if (badge) {
-                const foilText = isFoil ? ' foil' : ' regular';
-                badge.textContent = data.new_quantity + foilText;
-                if (data.new_quantity === 0) {
-                    badge.className = 'badge bg-secondary';
-                } else {
-                    badge.className = isFoil ? 'badge bg-warning' : 'badge bg-primary';
-                }
-            }
-            
-            // Show success message
-            showMessage('Quantity updated successfully!', 'success');
-            
-            // If quantity is 0, remove the card from the display
-            if (data.new_quantity === 0) {
-                const cardElement = input.closest('.col-md-6');
-                if (cardElement) {
-                    cardElement.style.transition = 'opacity 0.3s';
-                    cardElement.style.opacity = '0';
-                    setTimeout(() => {
-                        cardElement.remove();
-                        // Check if collection is empty
-                        const remainingCards = document.querySelectorAll('.col-md-6');
-                        if (remainingCards.length === 0) {
-                            location.reload(); // Reload to show empty collection message
-                        }
-                    }, 300);
-                }
-            }
-        } else {
-            showMessage('Error: ' + data.message, 'danger');
-        }
-    })
-    .catch(error => {
-        showMessage('Error: ' + error.message, 'danger');
-    });
-}
-
-function showMessage(text, type) {
-    // Remove existing messages
-    const existingMessages = document.querySelectorAll('.alert-message');
-    existingMessages.forEach(msg => msg.remove());
-    
-    // Create new message
-    const messageDiv = document.createElement('div');
-    messageDiv.className = `alert alert-${type} alert-dismissible fade show alert-message`;
-    messageDiv.style.position = 'fixed';
-    messageDiv.style.top = '20px';
-    messageDiv.style.right = '20px';
-    messageDiv.style.zIndex = '9999';
-    messageDiv.innerHTML = `
-        ${text}
-        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-    `;
-    
-    document.body.appendChild(messageDiv);
-    
-    // Auto-remove after 3 seconds
-    setTimeout(() => {
-        if (messageDiv.parentNode) {
-            messageDiv.remove();
-        }
-    }, 3000);
-}
-
-
 function updateCollectionPrices() {
-    const updateButton = document.getElementById('updateButton');
-    const originalText = updateButton.innerHTML;
-    
-    // Disable button and show loading state
-    updateButton.disabled = true;
-    updateButton.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Updating...';
-    
-    showMessage('Starting price update... This may take a few minutes.', 'info');
-    
-    fetch('/update_collection_prices', {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-        }
-    })
-    .then(response => response.json())
-    .then(data => {
-        if (data.success) {
-            showMessage(data.message, 'success');
-            // Reload the page to show updated prices
-            setTimeout(() => {
-                location.reload();
-            }, 2000);
-        } else {
-            showMessage('Error: ' + data.message, 'danger');
-            // Re-enable button
-            updateButton.disabled = false;
-            updateButton.innerHTML = originalText;
-        }
-    })
-    .catch(error => {
-        showMessage('Error: ' + error.message, 'danger');
-        // Re-enable button
-        updateButton.disabled = false;
-        updateButton.innerHTML = originalText;
-    });
+    const btn = document.getElementById('updateButton');
+    const original = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Updating...';
+    fetch('/update_collection_prices', { method: 'POST', headers: {'Content-Type': 'application/json'} })
+        .then(r => r.json())
+        .then(d => {
+            alert(d.message);
+            if (d.success) location.reload();
+            else { btn.disabled = false; btn.innerHTML = original; }
+        })
+        .catch(e => { alert('Error: ' + e.message); btn.disabled = false; btn.innerHTML = original; });
 }
 </script>
 {% endblock %}
