@@ -9,3 +9,5 @@ magic_collector.db
 venv/
 __pycache__/
 .vscode/
+.opencode/
+

@@ -1365,6 +1365,52 @@ def fetch_cards(set_code):
     else:
         return jsonify({'success': False, 'message': f'Failed to fetch cards for set {set_code}'})
 
+@app.route('/api/card_by_name')
+def api_card_by_name():
+    """Return card detail JSON for the most recent printing of a name.
+
+    Used by the deck view to show card details inline. Prefers a printing that
+    has an image; otherwise falls back to the most recently added record.
+    """
+    name = (request.args.get('name') or '').strip()
+    if not name:
+        return jsonify({'success': False, 'message': 'Missing name'}), 400
+    conn = sqlite3.connect(DATABASE)
+    cursor = conn.cursor()
+    cursor.execute('''
+        SELECT id, name, mana_cost, cmc, type_line, oracle_text, power, toughness,
+               set_code, set_name, collector_number, rarity, artist,
+               legalities, prices, image_uris, card_faces
+        FROM cards
+        WHERE name = ?
+        ORDER BY (image_uris IS NULL OR image_uris = ''), created_at DESC
+        LIMIT 1
+    ''', (name,))
+    row = cursor.fetchone()
+    conn.close()
+    if not row:
+        return jsonify({'success': False, 'message': f'Card "{name}" is not in the local database'}), 404
+
+    def parse(s):
+        if not s:
+            return None
+        try:
+            return json.loads(s)
+        except (ValueError, TypeError):
+            return None
+
+    card = {
+        'id': row[0], 'name': row[1], 'mana_cost': row[2], 'cmc': row[3],
+        'type_line': row[4], 'oracle_text': row[5], 'power': row[6], 'toughness': row[7],
+        'set_code': row[8], 'set_name': row[9], 'collector_number': row[10],
+        'rarity': row[11], 'artist': row[12],
+        'legalities': parse(row[13]),
+        'prices': parse(row[14]),
+        'image_uris': parse(row[15]),
+        'card_faces': parse(row[16]),
+    }
+    return jsonify({'success': True, 'card': card})
+
 @app.route('/add_set_to_collection/<set_code>', methods=['POST'])
 def add_set_to_collection(set_code):
     """Add 1x of every card in a set to a pinned collection group.

@@ -54,7 +54,7 @@
                                     </thead>
                                     <tbody>
                                         {% for card in deck.main_deck %}
-                                        <tr class="{% if card.in_collection >= card.quantity %}table-success{% elif card.in_collection > 0 %}table-warning{% endif %}">
+                                        <tr class="card-row {% if card.in_collection >= card.quantity %}table-success{% elif card.in_collection > 0 %}table-warning{% endif %}" data-card-name="{{ card.name }}" style="cursor: pointer;">
                                             <td class="fw-bold">{{ card.quantity }}</td>
                                             <td>{{ card.name }}</td>
                                             <td class="text-center">
@@ -112,7 +112,7 @@
                                     </thead>
                                     <tbody>
                                         {% for card in deck.sideboard %}
-                                        <tr class="{% if card.in_collection >= card.quantity %}table-success{% elif card.in_collection > 0 %}table-warning{% endif %}">
+                                        <tr class="card-row {% if card.in_collection >= card.quantity %}table-success{% elif card.in_collection > 0 %}table-warning{% endif %}" data-card-name="{{ card.name }}" style="cursor: pointer;">
                                             <td class="fw-bold">{{ card.quantity }}</td>
                                             <td>{{ card.name }}</td>
                                             <td class="text-center">
@@ -275,7 +275,160 @@
 }
 </style>
 
+<!-- Card detail modal -->
+<div class="modal fade" id="cardDetailModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-xl modal-dialog-scrollable">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="cardDetailTitle">Card Details</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body" id="cardDetailBody">
+        <div class="text-center py-5"><i class="fas fa-spinner fa-spin fa-2x text-muted"></i></div>
+      </div>
+      <div class="modal-footer">
+        <a href="#" id="cardDetailFullLink" class="btn btn-outline-primary">Open full card page</a>
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <script>
+let cardDetailModal = null;
+function getCardDetailModal() {
+    if (!cardDetailModal) {
+        cardDetailModal = new bootstrap.Modal(document.getElementById('cardDetailModal'));
+    }
+    return cardDetailModal;
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+    document.querySelectorAll('tr.card-row').forEach(row => {
+        row.addEventListener('click', () => showCardDetail(row.dataset.cardName));
+    });
+});
+
+function rarityClass(rarity) {
+    if (rarity === 'mythic') return 'danger';
+    if (rarity === 'rare') return 'warning';
+    if (rarity === 'uncommon') return 'info';
+    return 'secondary';
+}
+
+function legalityClass(status) {
+    if (status === 'legal') return 'success';
+    if (status === 'banned') return 'danger';
+    if (status === 'restricted') return 'warning';
+    return 'secondary';
+}
+
+function escapeHtml(s) {
+    if (s == null) return '';
+    return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+function renderImage(card) {
+    if (Array.isArray(card.card_faces) && card.card_faces.length) {
+        return card.card_faces.map(f => {
+            const uri = f.image_uris && (f.image_uris.large || f.image_uris.normal);
+            return `
+              <div class="mb-3 text-center">
+                <h6>${escapeHtml(f.name || '')}</h6>
+                ${uri
+                  ? `<img src="${uri}" class="img-fluid" style="max-height: 380px; border-radius: 8px;">`
+                  : '<div class="bg-light d-flex align-items-center justify-content-center" style="height:300px;border-radius:8px;"><i class="fas fa-image fa-3x text-muted"></i></div>'}
+              </div>`;
+        }).join('');
+    }
+    const uri = card.image_uris && (card.image_uris.large || card.image_uris.normal);
+    if (uri) {
+        return `<img src="${uri}" class="img-fluid" alt="" style="max-height: 500px; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.15);">`;
+    }
+    return '<div class="bg-light d-flex align-items-center justify-content-center" style="height:400px;border-radius:8px;"><i class="fas fa-image fa-5x text-muted"></i></div>';
+}
+
+function renderInfo(card) {
+    const rows = [
+        ['Name', escapeHtml(card.name)],
+        ['Mana Cost', escapeHtml(card.mana_cost || 'None')],
+        ['CMC', card.cmc != null ? card.cmc : '0'],
+        ['Type', escapeHtml(card.type_line || 'Unknown')],
+        ['Rarity', `<span class="badge bg-${rarityClass(card.rarity)}">${escapeHtml(card.rarity || 'unknown')}</span>`],
+        ['Set', `${escapeHtml(card.set_name || '')} (${escapeHtml((card.set_code || '').toUpperCase())})`],
+        ['Collector #', escapeHtml(card.collector_number || '')],
+    ];
+    if (card.power || card.toughness) {
+        rows.push(['P/T', `${escapeHtml(card.power || '')}${(card.power && card.toughness) ? '/' : ''}${escapeHtml(card.toughness || '')}`]);
+    }
+    if (card.artist) rows.push(['Artist', escapeHtml(card.artist)]);
+    const infoRows = rows.map(([k, v]) => `
+        <div class="row mb-2"><div class="col-sm-4"><strong>${k}:</strong></div><div class="col-sm-8">${v}</div></div>`
+    ).join('');
+    const oracle = card.oracle_text
+        ? `<div class="card mt-3"><div class="card-header"><h6 class="mb-0"><i class="fas fa-scroll"></i> Oracle Text</h6></div>
+           <div class="card-body"><p class="mb-0">${escapeHtml(card.oracle_text).replace(/\n/g, '<br>')}</p></div></div>`
+        : '';
+    return `
+        <div class="card"><div class="card-header"><h6 class="mb-0"><i class="fas fa-info-circle"></i> Card Information</h6></div>
+        <div class="card-body">${infoRows}</div></div>
+        ${oracle}`;
+}
+
+function renderLegalities(card) {
+    if (!card.legalities || typeof card.legalities !== 'object') return '';
+    const items = Object.entries(card.legalities).map(([fmt, st]) =>
+        `<div class="col-md-6 mb-2"><span class="badge bg-${legalityClass(st)}">${escapeHtml(fmt[0].toUpperCase()+fmt.slice(1))}: ${escapeHtml(st[0].toUpperCase()+st.slice(1))}</span></div>`
+    ).join('');
+    return `
+        <div class="card mt-3"><div class="card-header"><h6 class="mb-0"><i class="fas fa-gavel"></i> Legalities</h6></div>
+        <div class="card-body"><div class="row">${items}</div></div></div>`;
+}
+
+function renderPricing(card) {
+    if (!card.prices || typeof card.prices !== 'object') return '';
+    const p = card.prices;
+    const lines = [];
+    if (p.usd) lines.push(`<div class="col-md-6 mb-2"><strong>USD:</strong> $${escapeHtml(p.usd)}</div>`);
+    if (p.usd_foil) lines.push(`<div class="col-md-6 mb-2"><strong>USD Foil:</strong> $${escapeHtml(p.usd_foil)}</div>`);
+    if (p.eur) lines.push(`<div class="col-md-6 mb-2"><strong>EUR:</strong> €${escapeHtml(p.eur)}</div>`);
+    if (p.tix) lines.push(`<div class="col-md-6 mb-2"><strong>MTGO:</strong> ${escapeHtml(p.tix)} tix</div>`);
+    if (!lines.length) return '';
+    return `
+        <div class="card mt-3"><div class="card-header"><h6 class="mb-0"><i class="fas fa-dollar-sign"></i> Pricing</h6></div>
+        <div class="card-body"><div class="row">${lines.join('')}</div></div></div>`;
+}
+
+function showCardDetail(cardName) {
+    document.getElementById('cardDetailTitle').textContent = cardName;
+    const body = document.getElementById('cardDetailBody');
+    const link = document.getElementById('cardDetailFullLink');
+    link.classList.add('disabled');
+    link.removeAttribute('href');
+    body.innerHTML = '<div class="text-center py-5"><i class="fas fa-spinner fa-spin fa-2x text-muted"></i></div>';
+    getCardDetailModal().show();
+
+    fetch('/api/card_by_name?name=' + encodeURIComponent(cardName))
+        .then(r => r.json().then(d => ({ status: r.status, data: d })))
+        .then(({ status, data }) => {
+            if (status !== 200 || !data.success) {
+                body.innerHTML = `<div class="alert alert-warning mb-0"><strong>${escapeHtml(cardName)}</strong> is not in the local database.<br><small>Fetch the card's set from the Sets page first.</small></div>`;
+                return;
+            }
+            const card = data.card;
+            body.innerHTML = `
+                <div class="row">
+                    <div class="col-md-5 text-center">${renderImage(card)}</div>
+                    <div class="col-md-7">${renderInfo(card)}${renderLegalities(card)}${renderPricing(card)}</div>
+                </div>`;
+            link.href = '/card/' + card.id;
+            link.classList.remove('disabled');
+        })
+        .catch(err => {
+            body.innerHTML = `<div class="alert alert-danger mb-0">Error: ${escapeHtml(err.message)}</div>`;
+        });
+}
+
 function deleteDeck(deckId, deckName) {
     if (confirm(`Are you sure you want to delete the deck "${deckName}"?\n\nThis action cannot be undone.`)) {
         // Show second confirmation for extra safety
