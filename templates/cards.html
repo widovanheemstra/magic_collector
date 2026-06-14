@@ -68,43 +68,29 @@
     {% if cards %}
         {% for card in cards %}
         <div class="col-md-6 col-lg-4 mb-4">
-            <div class="card h-100">
-                {% if card[39] and ' // ' in card[39] %}
-                <!-- Double-sided card - show first face image -->
-                {% set card_faces_string = card[39] %}
-                {% set first_face = card_faces_string.split(' // ')[0] %}
-                {% if ' |IMG:' in first_face %}
-                {% set face_parts = first_face.split(' |IMG:') %}
-                {% set image_url = face_parts[1] %}
-                <div class="card-img-top bg-light d-flex justify-content-center align-items-center" style="min-height: 200px;">
-                    <img src="{{ image_url }}" class="card-image" alt="{{ card[1] }}" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';">
-                </div>
-                {% else %}
-                <div class="card-img-top bg-light d-flex justify-content-center align-items-center" style="min-height: 200px;">
-                    <div class="text-center">
-                        <i class="fas fa-exchange-alt fa-2x text-muted mb-2"></i>
-                        <div class="small text-muted">Double-sided card</div>
-                    </div>
-                </div>
-                {% endif %}
-                {% elif card[37] %}
-                <!-- Single-sided card -->
-                {% set image_data = card[37]|from_json %}
-                <div class="card-img-top bg-light d-flex justify-content-center align-items-center" style="min-height: 200px;">
-                    <img src="{{ image_data.normal or '' }}" class="card-image" alt="{{ card[1] }}" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';">
-                </div>
-                {% else %}
-                <!-- No image available -->
-                <div class="card-img-top card-image bg-light d-flex align-items-center justify-content-center" style="min-height: 200px;">
+            <div class="card h-100 card-tile" style="cursor: pointer;" onclick="viewCard('{{ card[0] }}')">
+                <div class="card-img-top bg-light d-flex justify-content-center align-items-center" style="min-height: 200px; gap: 0.5rem;">
+                    {% set image_data = card[37]|from_json %}
+                    {% set faces = card[38]|from_json %}
+                    {% set top_src = image_data.normal or image_data.small or '' %}
+                    {% if top_src %}
+                    <img src="{{ top_src }}" class="card-image" alt="{{ card[1] }}" style="max-height: 200px; object-fit: contain;">
+                    {% elif faces and faces|length > 1 %}
+                    {# Double-faced card: show both faces next to each other #}
+                    {% for face in faces %}
+                    {% set face_image = face.image_uris or {} %}
+                    {% if face_image.normal or face_image.small %}
+                    <img src="{{ face_image.normal or face_image.small }}" class="card-image" alt="{{ face.name or card[1] }}" style="max-height: 200px; max-width: 50%; object-fit: contain;">
+                    {% endif %}
+                    {% endfor %}
+                    {% elif faces and faces[0].image_uris %}
+                    <img src="{{ faces[0].image_uris.normal or faces[0].image_uris.small or '' }}" class="card-image" alt="{{ card[1] }}" style="max-height: 200px; object-fit: contain;">
+                    {% else %}
                     <i class="fas fa-image fa-3x text-muted"></i>
+                    {% endif %}
                 </div>
-                {% endif %}
                 <div class="card-body">
-                    <h6 class="card-title">
-                        <a href="/card/{{ card[0] }}" class="text-decoration-none text-dark">
-                            {{ card[1] }}
-                        </a>
-                    </h6>
+                    <h6 class="card-title">{{ card[1] }}</h6>
                     <p class="card-text">
                         <small class="text-muted">
                             <strong>Mana Cost:</strong> {{ card[2] or 'None' }}<br>
@@ -163,4 +149,21 @@
     </div>
 </div>
 {% endif %}
+
+<style>
+.card-tile {
+    transition: transform 0.2s ease-in-out, box-shadow 0.2s ease-in-out;
+}
+
+.card-tile:hover {
+    transform: translateY(-5px);
+    box-shadow: 0 8px 25px rgba(0,0,0,0.15);
+}
+</style>
+
+<script>
+function viewCard(cardId) {
+    window.location.href = `/card/${cardId}?from=set&set_code={{ set_info[1] if set_info else '' }}`;
+}
+</script>
 {% endblock %}

@@ -13,7 +13,7 @@
 </div>
 
 <div class="row">
-    <div class="col-md-6">
+    <div class="col-md-12">
         <div class="card">
             <div class="card-header">
                 <h5><i class="fas fa-collection"></i> Collection Management</h5>
@@ -50,46 +50,6 @@
                     <small class="text-muted">
                         <i class="fas fa-info-circle"></i> 
                         Clearing your collection will permanently remove all cards from your collection.
-                    </small>
-                </div>
-            </div>
-        </div>
-    </div>
-    
-    <div class="col-md-6">
-        <div class="card">
-            <div class="card-header">
-                <h5><i class="fas fa-exchange-alt"></i> Trade Management</h5>
-            </div>
-            <div class="card-body">
-                <p class="card-text">Manage your trade history data.</p>
-                
-                <!-- Trade Statistics -->
-                <div class="row mb-3">
-                    <div class="col-6">
-                        <div class="text-center">
-                            <h4 class="text-primary" id="tradeCount">-</h4>
-                            <small class="text-muted">Total Trades</small>
-                        </div>
-                    </div>
-                    <div class="col-6">
-                        <div class="text-center">
-                            <h4 class="text-info" id="tradeProfit">-</h4>
-                            <small class="text-muted">Total Profit</small>
-                        </div>
-                    </div>
-                </div>
-                
-                <div class="d-grid gap-2">
-                    <button class="btn btn-danger" onclick="deleteAllTrades()" id="deleteTradesBtn">
-                        <i class="fas fa-trash-alt"></i> Delete All Trades
-                    </button>
-                </div>
-                
-                <div class="mt-3">
-                    <small class="text-muted">
-                        <i class="fas fa-info-circle"></i> 
-                        Deleting all trades will permanently remove all trade records without affecting your collection.
                     </small>
                 </div>
             </div>
@@ -143,28 +103,22 @@
             </div>
             <div class="card-body">
                 <div class="row">
-                    <div class="col-md-3">
+                    <div class="col-md-4">
                         <div class="text-center">
                             <h4 class="text-primary" id="totalCards">-</h4>
                             <small class="text-muted">Total Cards in Database</small>
                         </div>
                     </div>
-                    <div class="col-md-3">
+                    <div class="col-md-4">
                         <div class="text-center">
                             <h4 class="text-info" id="totalSets">-</h4>
                             <small class="text-muted">Total Sets</small>
                         </div>
                     </div>
-                    <div class="col-md-3">
+                    <div class="col-md-4">
                         <div class="text-center">
                             <h4 class="text-success" id="collectionCards">-</h4>
                             <small class="text-muted">Cards in Collection</small>
-                        </div>
-                    </div>
-                    <div class="col-md-3">
-                        <div class="text-center">
-                            <h4 class="text-warning" id="totalTrades">-</h4>
-                            <small class="text-muted">Total Trades</small>
                         </div>
                     </div>
                 </div>
@@ -208,29 +162,6 @@ function loadStatistics() {
             console.error('Error loading collection stats:', error);
         });
     
-    // Load trade statistics
-    fetch('/trades')
-        .then(response => response.text())
-        .then(html => {
-            const parser = new DOMParser();
-            const doc = parser.parseFromString(html, 'text/html');
-            
-            // Extract trade count
-            const tradeCountElement = doc.querySelector('.text-primary');
-            if (tradeCountElement) {
-                document.getElementById('tradeCount').textContent = tradeCountElement.textContent;
-            }
-            
-            // Extract total profit
-            const profitElement = doc.querySelector('.text-success, .text-danger');
-            if (profitElement) {
-                document.getElementById('tradeProfit').textContent = profitElement.textContent;
-            }
-        })
-        .catch(error => {
-            console.error('Error loading trade stats:', error);
-        });
-    
     // Load database statistics
     fetch('/get_database_stats')
         .then(response => response.json())
@@ -239,7 +170,6 @@ function loadStatistics() {
                 document.getElementById('totalCards').textContent = data.stats.total_cards;
                 document.getElementById('totalSets').textContent = data.stats.total_sets;
                 document.getElementById('collectionCards').textContent = data.stats.collection_cards;
-                document.getElementById('totalTrades').textContent = data.stats.total_trades;
                 document.getElementById('deckCount').textContent = data.stats.total_decks || 0;
             }
         })
@@ -283,63 +213,6 @@ function clearCollection() {
     
     // Proceed with clearing collection
     fetch('/clear_collection', {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-        }
-    })
-    .then(response => response.json())
-    .then(data => {
-        if (data.success) {
-            showMessage(data.message, 'success');
-            // Reload statistics
-            setTimeout(() => {
-                loadStatistics();
-            }, 2000);
-        } else {
-            showMessage('Error: ' + data.message, 'danger');
-        }
-    })
-    .catch(error => {
-        showMessage('Error: ' + error.message, 'danger');
-    });
-}
-
-function deleteAllTrades() {
-    // Show warning dialog
-    const confirmed = confirm(
-        '⚠️ WARNING: This will permanently delete ALL trade records!\n\n' +
-        'This action cannot be undone.\n\n' +
-        'Are you sure you want to delete all trades?'
-    );
-    
-    if (!confirmed) {
-        return;
-    }
-    
-    // Show second confirmation for extra safety
-    const doubleConfirmed = confirm(
-        '🚨 FINAL WARNING 🚨\n\n' +
-        'You are about to delete all trade records!\n\n' +
-        'Type "DELETE" in the next prompt to confirm.'
-    );
-    
-    if (!doubleConfirmed) {
-        return;
-    }
-    
-    // Final confirmation with text input
-    const userInput = prompt(
-        'Type "DELETE" (in all caps) to permanently delete all trades:'
-    );
-    
-    if (userInput !== 'DELETE') {
-        showMessage('Trade deletion cancelled.', 'info');
-        return;
-    }
-    
-    // Proceed with deleting all trades
-    fetch('/delete_all_trades', {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',

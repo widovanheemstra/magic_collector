@@ -19,6 +19,7 @@
                 </button>
             </div>
         </div>
+        <div id="updateStatus" class="alert" style="display: none;"></div>
         {% if total_collection_value %}
         <div class="alert alert-success">
             <h4 class="alert-heading"><i class="fas fa-dollar-sign"></i> Total Collection Value</h4>
@@ -31,7 +32,7 @@
 <div class="row">
     {% for g in groups %}
     <div class="col-md-6 col-lg-4 mb-4">
-        <div class="card h-100">
+        <div class="card h-100 group-card" style="cursor: pointer;" onclick="viewGroup({{ g.id }})">
             <div class="card-img-top bg-light d-flex justify-content-center align-items-center" style="min-height: 160px; padding: 1rem;">
                 {% if g.image_url %}
                 <img src="{{ g.image_url }}" alt="{{ g.name }}" style="max-height: 140px; max-width: 100%; object-fit: contain;">
@@ -50,11 +51,10 @@
                     {% if g.id == default_group_id %}<span class="badge bg-primary">Default</span>{% endif %}
                 </p>
                 <div class="mt-auto">
-                    <div class="d-flex justify-content-between small text-muted mb-2">
+                    <div class="d-flex justify-content-between small text-muted">
                         <span>{{ g.row_count }} distinct · {{ g.total_qty }} total</span>
                         {% if g.value %}<span class="text-success">${{ "%.2f"|format(g.value) }}</span>{% endif %}
                     </div>
-                    <a href="{{ url_for('view_collection_group', group_id=g.id) }}" class="btn btn-outline-primary btn-sm w-100">Open</a>
                 </div>
             </div>
         </div>
@@ -96,20 +96,76 @@
   </div>
 </div>
 
+<style>
+.group-card {
+    transition: transform 0.2s ease-in-out, box-shadow 0.2s ease-in-out;
+}
+
+.group-card:hover {
+    transform: translateY(-5px);
+    box-shadow: 0 8px 25px rgba(0,0,0,0.15);
+}
+</style>
+
 <script>
-function updateCollectionPrices() {
+function viewGroup(groupId) {
+    window.location.href = `/collection/${groupId}`;
+}
+
+async function updateCollectionPrices() {
     const btn = document.getElementById('updateButton');
+    const status = document.getElementById('updateStatus');
     const original = btn.innerHTML;
     btn.disabled = true;
     btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Updating...';
-    fetch('/update_collection_prices', { method: 'POST', headers: {'Content-Type': 'application/json'} })
-        .then(r => r.json())
-        .then(d => {
-            alert(d.message);
-            if (d.success) location.reload();
-            else { btn.disabled = false; btn.innerHTML = original; }
-        })
-        .catch(e => { alert('Error: ' + e.message); btn.disabled = false; btn.innerHTML = original; });
+    status.className = 'alert alert-info';
+    status.style.display = 'block';
+    status.innerHTML = '<i class="fas fa-sync-alt fa-spin"></i> Starting update...';
+
+    try {
+        const resp = await fetch('/update_collection_prices', {
+            method: 'POST', headers: {'Content-Type': 'application/json'}
+        });
+        if (!resp.ok) throw new Error('HTTP ' + resp.status);
+
+        const reader = resp.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+
+        while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            buffer += decoder.decode(value, { stream: true });
+
+            let nl;
+            while ((nl = buffer.indexOf('\n')) >= 0) {
+                const line = buffer.slice(0, nl).trim();
+                buffer = buffer.slice(nl + 1);
+                if (!line) continue;
+                const msg = JSON.parse(line);
+
+                if (msg.type === 'progress') {
+                    status.className = 'alert alert-info';
+                    status.innerHTML = `<i class="fas fa-sync-alt fa-spin"></i> Updating prices… ${msg.updated} / ${msg.total} cards`;
+                } else if (msg.type === 'done') {
+                    if (msg.success) {
+                        status.className = 'alert alert-success';
+                        status.innerHTML = `<i class="fas fa-check-circle"></i> ${msg.message}`;
+                    } else {
+                        status.className = 'alert alert-danger';
+                        status.innerHTML = `<i class="fas fa-exclamation-triangle"></i> ${msg.message}`;
+                    }
+                }
+            }
+        }
+    } catch (e) {
+        status.className = 'alert alert-danger';
+        status.style.display = 'block';
+        status.innerHTML = `<i class="fas fa-exclamation-triangle"></i> Error: ${e.message}`;
+    } finally {
+        btn.disabled = false;
+        btn.innerHTML = original;
+    }
 }
 </script>
 {% endblock %}

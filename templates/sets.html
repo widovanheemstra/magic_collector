@@ -28,7 +28,7 @@
     {% if sets %}
         {% for set in sets %}
         <div class="col-md-6 col-lg-4 mb-4 set-tile" data-set-name="{{ set[2]|lower }}" data-set-code="{{ set[1]|lower }}">
-            <div class="card set-card h-100">
+            <div class="card set-card h-100" style="cursor: pointer;" onclick="viewSetCards('{{ set[1] }}')">
                 <div class="card-body">
                     <div class="d-flex justify-content-between align-items-start mb-2">
                         <h5 class="card-title">{{ set[2] }}</h5>
@@ -52,7 +52,7 @@
                         {% endif %}
                     </p>
                 </div>
-                <div class="card-footer">
+                <div class="card-footer" onclick="event.stopPropagation()">
                     <div class="btn-group w-100 mb-2" role="group">
                         <a href="/cards/{{ set[1] }}" class="btn btn-outline-primary">
                             <i class="fas fa-cards-blank"></i> View Cards
@@ -113,7 +113,22 @@
 </div>
 {% endif %}
 
+<style>
+.set-card {
+    transition: transform 0.2s ease-in-out, box-shadow 0.2s ease-in-out;
+}
+
+.set-card:hover {
+    transform: translateY(-5px);
+    box-shadow: 0 8px 25px rgba(0,0,0,0.15);
+}
+</style>
+
 <script>
+function viewSetCards(setCode) {
+    window.location.href = `/cards/${setCode}`;
+}
+
 function filterSets() {
     const q = document.getElementById('setSearch').value.trim().toLowerCase();
     let shown = 0;

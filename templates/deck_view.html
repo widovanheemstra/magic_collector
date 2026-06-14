@@ -421,7 +421,7 @@ function showCardDetail(cardName) {
                     <div class="col-md-5 text-center">${renderImage(card)}</div>
                     <div class="col-md-7">${renderInfo(card)}${renderLegalities(card)}${renderPricing(card)}</div>
                 </div>`;
-            link.href = '/card/' + card.id;
+            link.href = '/card/' + card.id + '?from=deck&deck_id={{ deck.id }}';
             link.classList.remove('disabled');
         })
         .catch(err => {

@@ -1,17 +1,111 @@
 import time
 import json
 import sqlite3
+import re
 import requests
 import os
-from flask import Flask, render_template, request, jsonify, redirect, url_for
+from flask import Flask, render_template, request, jsonify, redirect, url_for, Response, stream_with_context
 from dotenv import load_dotenv
 
 # Load environment variables from .env file
 load_dotenv()
 
+# MTG color symbol mapping
+COLOR_SYMBOLS = {'W': 0, 'U': 1, 'B': 2, 'R': 3, 'G': 4}
+COLOR_NAMES = ['White', 'Blue', 'Black', 'Red', 'Green']
+RARITY_ORDER = {'common': 0, 'uncommon': 1, 'rare': 2, 'mythic': 3}
+
 app = Flask(__name__)
 
-# Database configuration
+
+def parse_mana_cost(mana_cost, colors_json=None):
+    """Parse a mana cost string and return a sort key tuple.
+    
+    Returns (category, color_count, unique_colors, numeric_value, display_name)
+    where:
+      category: 0=single_color, 1=multi_color, 2=colorless
+      color_count: number of unique colors
+      unique_colors: sorted list of color symbols
+      numeric_value: for colorless cards, the mana cost number
+      display_name: human-readable color group name
+    """
+    if not mana_cost:
+        if colors_json:
+            try:
+                colors_list = json.loads(colors_json)
+                if colors_list and len(colors_list) == 1:
+                    color = colors_list[0]
+                    return (0, 1, [color], 0, COLOR_NAMES[COLOR_SYMBOLS[color]])
+            except (json.JSONDecodeError, TypeError, KeyError):
+                pass
+        return (2, 0, [], 0, 'Colorless')
+    
+    color_symbols = re.findall(r'([WUBRG])', mana_cost)
+    unique_colors = sorted(set(color_symbols))
+    color_count = len(unique_colors)
+    
+    if color_count == 1:
+        color = unique_colors[0]
+        return (0, 1, unique_colors, 0, COLOR_NAMES[COLOR_SYMBOLS[color]])
+    elif color_count >= 2:
+        display = ' + '.join(COLOR_NAMES[COLOR_SYMBOLS[c]] for c in unique_colors)
+        return (1, color_count, unique_colors, 0, display)
+    else:
+        numeric_match = re.search(r'(\d+)', mana_cost)
+        numeric_value = int(numeric_match.group(1)) if numeric_match else 0
+        return (2, 0, [], numeric_value, str(numeric_value))
+
+
+def sort_collection(collection, sort_mode='collector_number'):
+    """Sort collection cards by the given mode.
+    
+    Each card entry is a tuple: (card_data..., quantity, is_foil, added_at, updated_at, price, line_total)
+    card_data columns: id(0), name(1), mana_cost(2), cmc(3), type_line(4), oracle_text(5),
+      power(6), toughness(7), colors(8), color_identity(9), legalities(10), games(11),
+      reserved(12), foil(13), nonfoil(14), finishes(15), oversized(16), promo(17),
+      reprint(18), variation(19), set_id(20), set_code(21), set_name(22),
+      collector_number(23), rarity(24), artist(25), border_color(26), frame(27),
+      full_art(28), textless(29), booster(30), story_spotlight(31), prices(32),
+      related_uris(33), purchase_uris(34), image_uris(35), card_faces(36)
+    """
+    def sort_key(card):
+        card_data = card[:37]
+        mana_cost = card_data[2]
+        colors_json = card_data[9]
+        rarity = (RARITY_ORDER.get(card_data[24], 99) if card_data[24] else 99)
+        collector = card_data[23] or ''
+        
+        # Extract numeric prefix from collector number for proper sorting
+        # e.g., "A-115" -> ("A", 115), "CH1" -> ("CH", 1), "304" -> ("", 304)
+        prefix_match = re.match(r'^([A-Za-z]+)-?', collector)
+        if prefix_match:
+            prefix = prefix_match.group(1)
+            rest = collector[len(prefix):].lstrip('-')
+            try:
+                num = int(rest) if rest else 0
+            except ValueError:
+                num = 0
+            collector_key = (prefix, num)
+        else:
+            try:
+                num = int(collector) if collector else 0
+                collector_key = ('', num)
+            except ValueError:
+                collector_key = (collector, 0)
+        
+        if sort_mode == 'color':
+            colors_col = card_data[8]  # colors column
+            cat, color_count, unique_colors, numeric_val, display = parse_mana_cost(mana_cost, colors_col)
+            # Sort by: category → color_count → display_name → rarity → collector_number
+            return (cat, color_count, display, rarity, collector_key, card_data[0])
+        elif sort_mode == 'rarity':
+            # Sort by: rarity → collector_number
+            return (rarity, collector_key, card_data[0])
+        else:
+            # collector_number (default)
+            return (collector_key, rarity, card_data[0])
+    
+    return sorted(collection, key=sort_key)
 DATABASE = os.getenv('DATABASE', 'magic_collector.db')
 
 # Custom Jinja2 filters
@@ -164,22 +258,6 @@ def init_db():
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (card_id) REFERENCES cards (id),
             UNIQUE(card_id, is_foil)
-        )
-    ''')
-    
-    # Create trade_data table
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS trade_data (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            set_code TEXT,
-            collector_number TEXT,
-            direction TEXT CHECK(direction IN ('Buy', 'Sell')),
-            quantity INTEGER,
-            price REAL,
-            total_amount REAL,
-            profit REAL,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY (set_code) REFERENCES sets (code)
         )
     ''')
     
@@ -624,6 +702,11 @@ def store_cards(cards_data, set_code):
     conn.commit()
     conn.close()
 
+@app.route('/favicon.ico')
+def favicon():
+    """Serve the favicon for browsers that request it at the site root."""
+    return app.send_static_file('favicon.ico')
+
 @app.route('/')
 def index():
     """Main page with sets overview"""
@@ -698,13 +781,13 @@ def view_card_detail(card_id):
     
     # Check if this is a double-sided card and get card_faces data
     card_faces_data = None
-    if card and card[39]:  # card_faces field is at index 39
+    if card and card[38]:  # card_faces field is at index 38
         try:
             # Try to parse as JSON first (new format)
-            card_faces_data = json.loads(card[39])
+            card_faces_data = json.loads(card[38])
         except (json.JSONDecodeError, TypeError):
             # Fallback for old format - try to parse the old string format
-            card_faces_string = card[39]
+            card_faces_string = card[38]
             if card_faces_string and ' // ' in card_faces_string:
                 # Split the faces and create a simple structure for the template
                 face_strings = card_faces_string.split(' // ')
@@ -752,8 +835,28 @@ def view_card_detail(card_id):
         other_printings = cursor.fetchall()
     
     conn.close()
-    
-    return render_template('card_detail.html', card=card, set_info=set_info, non_foil_qty=non_foil_qty, foil_qty=foil_qty, card_faces_data=card_faces_data, other_printings=other_printings)
+
+    # Determine the "back" target based on where the card was opened from.
+    # Originating pages pass a `from` query parameter (plus the relevant id).
+    back_url = None
+    back_label = None
+    from_page = request.args.get('from')
+    if from_page == 'collection' and request.args.get('group_id'):
+        back_url = url_for('view_collection_group', group_id=request.args.get('group_id'))
+        back_label = 'Back to Collection'
+    elif from_page == 'deck' and request.args.get('deck_id'):
+        back_url = url_for('deck_view', deck_id=request.args.get('deck_id'))
+        back_label = 'Back to Deck'
+    elif from_page == 'set' and request.args.get('set_code'):
+        back_url = url_for('view_cards_by_set', set_code=request.args.get('set_code'))
+        back_label = 'Back to Set'
+
+    # Fallback to the card's own set when no origin was provided.
+    if not back_url and set_info:
+        back_url = url_for('view_cards_by_set', set_code=set_info[1])
+        back_label = 'Back to Set'
+
+    return render_template('card_detail.html', card=card, set_info=set_info, non_foil_qty=non_foil_qty, foil_qty=foil_qty, card_faces_data=card_faces_data, other_printings=other_printings, back_url=back_url, back_label=back_label)
 
 @app.route('/add_to_collection', methods=['POST'])
 def add_to_collection_route():
@@ -829,66 +932,86 @@ def clear_collection_route():
 
 @app.route('/update_collection_prices', methods=['POST'])
 def update_collection_prices():
-    """Update prices and legality for all cards in the collection"""
-    try:
-        conn = sqlite3.connect(DATABASE)
-        cursor = conn.cursor()
-        
-        # Get all unique card IDs from the collection
-        cursor.execute('SELECT DISTINCT card_id FROM user_collection')
-        collection_cards = cursor.fetchall()
-        
-        if not collection_cards:
-            conn.close()
-            return jsonify({
-                'success': False,
-                'message': 'No cards in collection to update'
-            })
-        
+    """Update prices and legality for all cards in the collection.
+
+    Streams newline-delimited JSON progress events so the page can show how
+    many cards have been updated so far. Each line is either a ``progress``
+    event or a final ``done`` event.
+    """
+    conn = sqlite3.connect(DATABASE)
+    cursor = conn.cursor()
+
+    # Get all unique card IDs from the collection
+    cursor.execute('SELECT DISTINCT card_id FROM user_collection')
+    card_ids = [card_id for (card_id,) in cursor.fetchall()]
+    total = len(card_ids)
+
+    def generate():
         updated_count = 0
         error_count = 0
-        
-        for (card_id,) in collection_cards:
+
+        if not card_ids:
+            conn.close()
+            yield json.dumps({
+                'type': 'done', 'success': False, 'total': 0,
+                'updated': 0, 'errors': 0,
+                'message': 'No cards in collection to update'
+            }) + '\n'
+            return
+
+        yield json.dumps({
+            'type': 'progress', 'updated': 0, 'errors': 0, 'total': total
+        }) + '\n'
+
+        # Scryfall's bulk endpoint accepts up to 75 identifiers per request,
+        # so batch the lookups instead of one HTTP request per card.
+        for i in range(0, total, 75):
+            batch = card_ids[i:i + 75]
             try:
-                # Get card data from Scryfall
-                response = requests.get(f'https://api.scryfall.com/cards/{card_id}', timeout=10)
+                response = requests.post(
+                    'https://api.scryfall.com/cards/collection',
+                    json={'identifiers': [{'id': cid} for cid in batch]},
+                    timeout=30,
+                )
                 response.raise_for_status()
-                card_data = response.json()
-                
-                # Extract updated prices and legality
-                prices = json.dumps(card_data.get('prices', {}))
-                legalities = json.dumps(card_data.get('legalities', {}))
-                
-                # Update the card in the database
-                cursor.execute('''
-                    UPDATE cards 
-                    SET prices = ?, legalities = ?
-                    WHERE id = ?
-                ''', (prices, legalities, card_id))
-                
-                updated_count += 1
-                
-                # Be respectful to the API
+                result = response.json()
+
+                for card_data in result.get('data', []):
+                    prices = json.dumps(card_data.get('prices', {}))
+                    legalities = json.dumps(card_data.get('legalities', {}))
+
+                    cursor.execute('''
+                        UPDATE cards
+                        SET prices = ?, legalities = ?
+                        WHERE id = ?
+                    ''', (prices, legalities, card_data.get('id')))
+                    updated_count += 1
+
+                # Any identifiers Scryfall couldn't resolve are reported here.
+                error_count += len(result.get('not_found', []))
+                conn.commit()
+
+                # Be respectful to the API between batches.
                 time.sleep(0.1)
-                
+
             except Exception as e:
-                print(f"Error updating card {card_id}: {e}")
-                error_count += 1
-                continue
-        
-        conn.commit()
+                print(f"Error updating batch starting at {i}: {e}")
+                error_count += len(batch)
+
+            yield json.dumps({
+                'type': 'progress', 'updated': updated_count,
+                'errors': error_count, 'total': total
+            }) + '\n'
+
         conn.close()
-        
-        return jsonify({
-            'success': True,
-            'message': f'Updated prices and legality for {updated_count} cards. {error_count} cards had errors.'
-        })
-        
-    except Exception as e:
-        return jsonify({
-            'success': False,
-            'message': f'Error updating collection prices: {str(e)}'
-        })
+        yield json.dumps({
+            'type': 'done', 'success': True, 'total': total,
+            'updated': updated_count, 'errors': error_count,
+            'message': f'Updated prices and legality for {updated_count} cards. '
+                       f'{error_count} cards had errors.'
+        }) + '\n'
+
+    return Response(stream_with_context(generate()), mimetype='application/x-ndjson')
 
 @app.route('/collection')
 def view_collection():
@@ -972,12 +1095,18 @@ def view_collection_group(group_id):
     collection_with_prices = []
     total_value = 0
     for card_data in collection:
-        price = get_card_price(card_data, card_data[42])
-        quantity = card_data[41]
+        price = get_card_price(card_data, card_data[41])
+        quantity = card_data[40]
         line_total = price * quantity if price and quantity else None
         collection_with_prices.append((*card_data, price, line_total))
         if line_total:
             total_value += line_total
+
+    # Apply sorting based on query parameter
+    sort_mode = request.args.get('sort', 'collector_number')
+    if sort_mode not in ('color', 'rarity', 'collector_number'):
+        sort_mode = 'collector_number'
+    collection_sorted = sort_collection(collection_with_prices, sort_mode)
 
     group = {
         'id': g_row[0],
@@ -987,9 +1116,10 @@ def view_collection_group(group_id):
         'is_default': g_row[0] == get_default_group_id(),
     }
     return render_template('group_detail.html',
-                           group=group,
-                           collection=collection_with_prices,
-                           total_collection_value=total_value)
+                            group=group,
+                            collection=collection_sorted,
+                            total_collection_value=total_value,
+                            sort_mode=sort_mode)
 
 @app.route('/search')
 def search_cards():
@@ -1041,309 +1171,6 @@ def search_cards():
                          page=page, 
                          per_page=per_page,
                          total_pages=total_pages)
-
-@app.route('/trades')
-def view_trades():
-    """View trade data with pagination"""
-    page = request.args.get('page', 1, type=int)
-    per_page = 50
-    
-    conn = sqlite3.connect(DATABASE)
-    cursor = conn.cursor()
-    
-    # Get total count
-    cursor.execute('SELECT COUNT(*) FROM trade_data')
-    total_trades = cursor.fetchone()[0]
-    
-    # Calculate pagination
-    total_pages = (total_trades + per_page - 1) // per_page
-    offset = (page - 1) * per_page
-    
-    # Get trades for current page
-    cursor.execute('''
-        SELECT td.*, s.name as set_name, c.name as card_name
-        FROM trade_data td
-        LEFT JOIN sets s ON td.set_code = s.code
-        LEFT JOIN cards c ON td.set_code = c.set_code AND td.collector_number = c.collector_number
-        ORDER BY td.created_at DESC
-        LIMIT ? OFFSET ?
-    ''', (per_page, offset))
-    
-    trades = cursor.fetchall()
-    
-    # Calculate summary statistics
-    cursor.execute('SELECT SUM(total_amount) FROM trade_data WHERE direction = "Buy"')
-    total_bought = cursor.fetchone()[0] or 0
-    
-    cursor.execute('SELECT SUM(total_amount) FROM trade_data WHERE direction = "Sell"')
-    total_sold = cursor.fetchone()[0] or 0
-    
-    cursor.execute('SELECT SUM(profit) FROM trade_data')
-    total_profit = cursor.fetchone()[0] or 0
-    
-    conn.close()
-    
-    return render_template('trades.html', 
-                         trades=trades, 
-                         page=page, 
-                         total_pages=total_pages, 
-                         total_trades=total_trades,
-                         total_bought=total_bought,
-                         total_sold=total_sold,
-                         total_profit=total_profit)
-
-@app.route('/get_sets')
-def get_sets():
-    """Get all sets for dropdown"""
-    try:
-        conn = sqlite3.connect(DATABASE)
-        cursor = conn.cursor()
-        
-        cursor.execute('SELECT code, name FROM sets ORDER BY name')
-        sets = cursor.fetchall()
-        conn.close()
-        
-        return jsonify({
-            'success': True,
-            'sets': [{'code': s[0], 'name': s[1]} for s in sets]
-        })
-        
-    except Exception as e:
-        return jsonify({
-            'success': False,
-            'message': f'Error getting sets: {str(e)}'
-        })
-
-@app.route('/get_set_info/<set_code>')
-def get_set_info(set_code):
-    """Get set information including max collector number"""
-    try:
-        conn = sqlite3.connect(DATABASE)
-        cursor = conn.cursor()
-        
-        # Get set info
-        cursor.execute('SELECT name, card_count FROM sets WHERE code = ?', (set_code,))
-        set_info = cursor.fetchone()
-        
-        if not set_info:
-            conn.close()
-            return jsonify({
-                'success': False,
-                'message': f'Set not found: {set_code}'
-            })
-        
-        # Get max collector number for this set
-        cursor.execute('SELECT MAX(CAST(collector_number AS INTEGER)) FROM cards WHERE set_code = ?', (set_code,))
-        max_collector = cursor.fetchone()[0]
-        
-        conn.close()
-        
-        return jsonify({
-            'success': True,
-            'set_info': {
-                'name': set_info[0],
-                'card_count': set_info[1],
-                'max_collector_number': max_collector or 0
-            }
-        })
-        
-    except Exception as e:
-        return jsonify({
-            'success': False,
-            'message': f'Error getting set info: {str(e)}'
-        })
-
-@app.route('/get_card_info/<set_code>/<collector_number>')
-def get_card_info(set_code, collector_number):
-    """Get card information for trade form"""
-    try:
-        conn = sqlite3.connect(DATABASE)
-        cursor = conn.cursor()
-        
-        cursor.execute('''
-            SELECT c.id, c.name, c.set_code, c.collector_number, s.name as set_name
-            FROM cards c
-            LEFT JOIN sets s ON c.set_code = s.code
-            WHERE c.set_code = ? AND c.collector_number = ?
-        ''', (set_code, collector_number))
-        
-        card = cursor.fetchone()
-        conn.close()
-        
-        if card:
-            return jsonify({
-                'success': True,
-                'card': {
-                    'id': card[0],
-                    'name': card[1],
-                    'set_code': card[2],
-                    'collector_number': card[3],
-                    'set_name': card[4]
-                }
-            })
-        else:
-            return jsonify({
-                'success': False,
-                'message': f'Card not found: {set_code} #{collector_number}'
-            })
-            
-    except Exception as e:
-        return jsonify({
-            'success': False,
-            'message': f'Error getting card info: {str(e)}'
-        })
-
-@app.route('/add_trade', methods=['POST'])
-def add_trade():
-    """Add a new trade to the database and manage collection"""
-    try:
-        data = request.get_json()
-        
-        set_code = data.get('set_code')
-        collector_number = data.get('collector_number')
-        direction = data.get('direction')
-        quantity = int(data.get('quantity', 1))
-        price = float(data.get('price', 0))
-        profit = float(data.get('profit', 0))
-        is_foil = bool(data.get('is_foil', False))
-        trade_date = data.get('trade_date')  # Custom trade date
-        
-        total_amount = quantity * price
-        
-        conn = sqlite3.connect(DATABASE)
-        cursor = conn.cursor()
-        
-        # Find the card_id for this set_code and collector_number
-        cursor.execute('SELECT id FROM cards WHERE set_code = ? AND collector_number = ?', (set_code, collector_number))
-        card_result = cursor.fetchone()
-        
-        if not card_result:
-            conn.close()
-            return jsonify({
-                'success': False,
-                'message': f'Card not found: {set_code} #{collector_number}'
-            })
-        
-        card_id = card_result[0]
-        collection_message = ""
-        # Handle collection management based on direction
-        if direction == 'Buy':
-            # Add cards to collection
-            add_to_collection(card_id, quantity, is_foil)
-            collection_message = f'Added {quantity} {"foil" if is_foil else "regular"} cards to collection'
-        elif direction == 'Sell':
-            # Check if we have enough cards in collection
-            current_quantity = get_collection_quantity(card_id, is_foil)
-            if current_quantity < quantity:
-                conn.close()
-                return jsonify({
-                    'success': False,
-                    'message': f'Cannot sell {quantity} cards. Only {current_quantity} {"foil" if is_foil else "regular"} cards in collection'
-                })
-            
-            # Remove cards from collection
-            update_collection_quantity(card_id, current_quantity - quantity, is_foil)
-            collection_message = f'Removed {quantity} {"foil" if is_foil else "regular"} cards from collection'
-        
-        # Insert trade record with custom date
-        if trade_date:
-            cursor.execute('''
-                INSERT INTO trade_data (set_code, collector_number, direction, quantity, price, total_amount, profit, is_foil, created_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-            ''', (set_code, collector_number, direction, quantity, price, total_amount, profit, is_foil, trade_date))
-        else:
-            cursor.execute('''
-                INSERT INTO trade_data (set_code, collector_number, direction, quantity, price, total_amount, profit, is_foil)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-            ''', (set_code, collector_number, direction, quantity, price, total_amount, profit, is_foil))
-        
-        conn.commit()
-        conn.close()
-        
-        return jsonify({
-            'success': True,
-            'message': f'Successfully added {direction} trade for {quantity} {"foil" if is_foil else "regular"} cards. {collection_message}'
-        })
-        
-    except Exception as e:
-        return jsonify({
-            'success': False,
-            'message': f'Error adding trade: {str(e)}'
-        })
-
-@app.route('/delete_trade', methods=['POST'])
-def delete_trade():
-    """Delete a trade and manage collection accordingly"""
-    try:
-        data = request.get_json()
-        
-        trade_id = data.get('trade_id')
-        set_code = data.get('set_code')
-        collector_number = data.get('collector_number')
-        direction = data.get('direction')
-        quantity = int(data.get('quantity', 0))
-        is_foil = bool(data.get('is_foil', False))
-        
-        conn = sqlite3.connect(DATABASE)
-        cursor = conn.cursor()
-        
-        # Find the card_id for this set_code and collector_number
-        cursor.execute('SELECT id FROM cards WHERE set_code = ? AND collector_number = ?', (set_code, collector_number))
-        card_result = cursor.fetchone()
-        
-        if not card_result:
-            conn.close()
-            return jsonify({
-                'success': False,
-                'message': f'Card not found: {set_code} #{collector_number}'
-            })
-        
-        card_id = card_result[0]
-        collection_message = ""
-        
-        # Handle collection management based on direction (reverse the original action)
-        if direction == 'Buy':
-            # Original was buy, so we need to remove cards from collection
-            current_quantity = get_collection_quantity(card_id, is_foil)
-            if current_quantity < quantity:
-                conn.close()
-                return jsonify({
-                    'success': False,
-                    'message': f'Cannot delete buy trade. Only {current_quantity} {"foil" if is_foil else "regular"} cards in collection'
-                })
-            
-            # Remove cards from collection
-            update_collection_quantity(card_id, current_quantity - quantity, is_foil)
-            collection_message = f'Removed {quantity} {"foil" if is_foil else "regular"} cards from collection'
-            
-        elif direction == 'Sell':
-            # Original was sell, so we need to add cards back to collection
-            add_to_collection(card_id, quantity, is_foil)
-            collection_message = f'Added back {quantity} {"foil" if is_foil else "regular"} cards to collection'
-        
-        # Delete the trade record
-        cursor.execute('DELETE FROM trade_data WHERE id = ?', (trade_id,))
-        
-        if cursor.rowcount == 0:
-            conn.close()
-            return jsonify({
-                'success': False,
-                'message': 'Trade not found or already deleted'
-            })
-        
-        conn.commit()
-        conn.close()
-        
-        return jsonify({
-            'success': True,
-            'message': f'Successfully deleted {direction} trade. {collection_message}'
-        })
-        
-    except Exception as e:
-        return jsonify({
-            'success': False,
-            'message': f'Error deleting trade: {str(e)}'
-        })
 
 @app.route('/fetch_sets', methods=['POST'])
 def fetch_sets():
@@ -1517,30 +1344,6 @@ def view_settings():
     """Settings page"""
     return render_template('settings.html')
 
-@app.route('/delete_all_trades', methods=['POST'])
-def delete_all_trades():
-    """Delete all trades from the database"""
-    try:
-        conn = sqlite3.connect(DATABASE)
-        cursor = conn.cursor()
-        
-        # Get count before deleting
-        cursor.execute('SELECT COUNT(*) FROM trade_data')
-        count_before = cursor.fetchone()[0]
-        
-        # Delete all trades
-        cursor.execute('DELETE FROM trade_data')
-        
-        conn.commit()
-        conn.close()
-        
-        return jsonify({
-            'success': True, 
-            'message': f'Successfully deleted {count_before} trades from the database'
-        })
-    except Exception as e:
-        return jsonify({'success': False, 'message': f'Error deleting trades: {str(e)}'})
-
 @app.route('/get_database_stats')
 def get_database_stats():
     """Get database statistics"""
@@ -1560,10 +1363,6 @@ def get_database_stats():
         cursor.execute('SELECT COUNT(*) FROM user_collection')
         collection_cards = cursor.fetchone()[0]
         
-        # Get total trades count
-        cursor.execute('SELECT COUNT(*) FROM trade_data')
-        total_trades = cursor.fetchone()[0]
-        
         # Get total decks count
         cursor.execute('SELECT COUNT(*) FROM decks')
         total_decks = cursor.fetchone()[0]
@@ -1576,7 +1375,6 @@ def get_database_stats():
                 'total_cards': total_cards,
                 'total_sets': total_sets,
                 'collection_cards': collection_cards,
-                'total_trades': total_trades,
                 'total_decks': total_decks
             }
         })
