@@ -26,6 +26,13 @@ ELASTICSEARCH_PASSWORD = os.getenv('ELASTICSEARCH_PASSWORD', None)
 ELASTICSEARCH_INDEX = os.getenv('ELASTICSEARCH_INDEX', 'mtg_cards')
 BULK_DELAY_SECONDS = float(os.getenv('BULK_DELAY_SECONDS', '0.1'))  # Delay between bulk operations in seconds
 
+# Scryfall rejects the default python-requests User-Agent with a 400; send a
+# custom User-Agent and explicit Accept header on every request.
+SCRYFALL_HEADERS = {
+    'User-Agent': os.getenv('SCRYFALL_USER_AGENT', 'MagicCollector/1.0'),
+    'Accept': 'application/json',
+}
+
 def create_elasticsearch_client():
     """Create and return an Elasticsearch client"""
     # Check if SSL is required (https)
@@ -64,7 +71,7 @@ def create_elasticsearch_client():
 def get_bulk_data_info():
     """Get bulk data information from Scryfall API"""
     try:
-        response = requests.get('https://api.scryfall.com/bulk-data')
+        response = requests.get('https://api.scryfall.com/bulk-data', headers=SCRYFALL_HEADERS, timeout=30)
         response.raise_for_status()
         return response.json()
     except requests.RequestException as e:
@@ -329,7 +336,7 @@ def download_and_process_bulk_data():
         
         # Download the bulk data
         print("\n📥 Downloading bulk data (this may take a while)...")
-        response = requests.get(download_url, stream=True)
+        response = requests.get(download_url, headers=SCRYFALL_HEADERS, stream=True)
         response.raise_for_status()
         
         # Get file size for progress tracking

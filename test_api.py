@@ -5,11 +5,18 @@ Test script to verify Scryfall API functionality
 
 import requests
 
+# Scryfall rejects the default python-requests User-Agent with a 400; send a
+# custom User-Agent and explicit Accept header on every request.
+SCRYFALL_HEADERS = {
+    'User-Agent': 'MagicCollector/1.0',
+    'Accept': 'application/json',
+}
+
 def test_sets_api():
     """Test fetching sets from Scryfall API"""
     print("Testing Scryfall Sets API...")
     try:
-        response = requests.get('https://api.scryfall.com/sets')
+        response = requests.get('https://api.scryfall.com/sets', headers=SCRYFALL_HEADERS, timeout=30)
         response.raise_for_status()
         data = response.json()
         
@@ -32,7 +39,7 @@ def test_cards_api():
     print("\nTesting Scryfall Cards API...")
     try:
         # Test with a small set like "lea" (Limited Edition Alpha)
-        response = requests.get('https://api.scryfall.com/cards/search?q=set:lea')
+        response = requests.get('https://api.scryfall.com/cards/search?q=set:lea', headers=SCRYFALL_HEADERS, timeout=30)
         response.raise_for_status()
         data = response.json()
         

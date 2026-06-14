@@ -108,6 +108,14 @@ def sort_collection(collection, sort_mode='collector_number'):
     return sorted(collection, key=sort_key)
 DATABASE = os.getenv('DATABASE', 'magic_collector.db')
 
+# Scryfall requires a custom User-Agent and an explicit Accept header on every
+# request; it rejects the default python-requests User-Agent with a 400
+# (subcode "generic_user_agent"). See https://scryfall.com/docs/api.
+SCRYFALL_HEADERS = {
+    'User-Agent': os.getenv('SCRYFALL_USER_AGENT', 'MagicCollector/1.0'),
+    'Accept': 'application/json',
+}
+
 # Custom Jinja2 filters
 @app.template_filter('from_json')
 def from_json_filter(json_string):
@@ -134,17 +142,6 @@ def strftime_filter(timestamp, format_string='%Y-%m-%d %H:%M'):
         except (ValueError, AttributeError):
             return str(timestamp)
     return 'N/A'
-
-@app.template_filter('from_json')
-def from_json_filter(json_string):
-    """Custom filter to parse JSON strings"""
-    if not json_string:
-        return {}
-    
-    try:
-        return json.loads(json_string)
-    except (json.JSONDecodeError, TypeError):
-        return {}
 
 def init_db():
     """Initialize the database with required tables"""
@@ -351,7 +348,7 @@ def init_db():
 def get_scryfall_sets():
     """Fetch all sets from Scryfall API"""
     try:
-        response = requests.get('https://api.scryfall.com/sets')
+        response = requests.get('https://api.scryfall.com/sets', headers=SCRYFALL_HEADERS, timeout=30)
         response.raise_for_status()
         return response.json()
     except requests.RequestException as e:
@@ -365,7 +362,7 @@ def get_cards_by_set(set_code):
         all_cards = []
         
         while url:
-            response = requests.get(url)
+            response = requests.get(url, headers=SCRYFALL_HEADERS, timeout=30)
             response.raise_for_status()
             data = response.json()
             all_cards.extend(data.get('data', []))
@@ -384,7 +381,7 @@ def get_cards_by_set(set_code):
 def get_card_from_scryfall(card_id):
     """Fetch a specific card from Scryfall API by ID"""
     try:
-        response = requests.get(f'https://api.scryfall.com/cards/{card_id}')
+        response = requests.get(f'https://api.scryfall.com/cards/{card_id}', headers=SCRYFALL_HEADERS, timeout=30)
         response.raise_for_status()
         return response.json()
     except requests.RequestException as e:
@@ -971,6 +968,7 @@ def update_collection_prices():
                 response = requests.post(
                     'https://api.scryfall.com/cards/collection',
                     json={'identifiers': [{'id': cid} for cid in batch]},
+                    headers=SCRYFALL_HEADERS,
                     timeout=30,
                 )
                 response.raise_for_status()
