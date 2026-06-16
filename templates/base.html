@@ -11,6 +11,15 @@
     <link rel="manifest" href="{{ url_for('static', filename='site.webmanifest') }}">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <!-- Active theme stylesheet — href set synchronously before first paint -->
+    <link id="appThemeStylesheet" rel="stylesheet" href="">
+    <script>
+        (function() {
+            var themes = { ice: '/static/css/kaldheim-theme.css', dark: '/static/css/kaldheim-dark-theme.css' };
+            var saved = localStorage.getItem('appTheme');
+            if (saved && themes[saved]) document.getElementById('appThemeStylesheet').href = themes[saved];
+        })();
+    </script>
     <style>
         .card-image {
             width: 100%;
@@ -20,31 +29,92 @@
             border-radius: 8px;
             box-shadow: 0 2px 8px rgba(0,0,0,0.1);
         }
-        .card-img-top {
-            padding: 10px;
+        .card-img-top { padding: 10px; }
+        .set-card { transition: transform 0.2s; }
+        .set-card:hover { transform: translateY(-5px); }
+        .mana-symbol { width: 20px; height: 20px; display: inline-block; margin-right: 2px; }
+
+        /* ── Theme picker dropdown ────────────────────────────────────────── */
+        .theme-picker { position: relative; }
+
+        .theme-picker-btn {
+            background: none;
+            border: 1px solid rgba(255,255,255,.25);
+            border-radius: 6px;
+            color: rgba(255,255,255,.85);
+            cursor: pointer;
+            padding: 5px 11px;
+            font-size: .85rem;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            transition: border-color .15s, background .15s;
+            white-space: nowrap;
         }
-        .set-card {
-            transition: transform 0.2s;
+        .theme-picker-btn:hover {
+            border-color: rgba(255,255,255,.55);
+            background: rgba(255,255,255,.08);
         }
-        .set-card:hover {
-            transform: translateY(-5px);
+        .theme-picker-btn .tp-caret {
+            font-size: .65rem;
+            opacity: .7;
+            transition: transform .2s;
         }
-        .mana-symbol {
-            width: 20px;
-            height: 20px;
-            display: inline-block;
-            margin-right: 2px;
+        .theme-picker.open .tp-caret { transform: rotate(180deg); }
+
+        .theme-menu {
+            display: none;
+            position: absolute;
+            right: 0;
+            top: calc(100% + 6px);
+            min-width: 180px;
+            background: #1c2333;
+            border: 1px solid rgba(255,255,255,.12);
+            border-radius: 9px;
+            padding: 6px;
+            box-shadow: 0 10px 32px rgba(0,0,0,.55);
+            z-index: 9999;
+        }
+        .theme-picker.open .theme-menu { display: block; }
+
+        .theme-option {
+            display: flex;
+            align-items: center;
+            gap: 9px;
+            padding: 8px 11px;
+            border-radius: 6px;
+            cursor: pointer;
+            color: rgba(255,255,255,.8);
+            font-size: .87rem;
+            transition: background .12s, color .12s;
+            border: 1px solid transparent;
+        }
+        .theme-option:hover {
+            background: rgba(255,255,255,.08);
+            color: #fff;
+        }
+        .theme-option.active {
+            background: rgba(255,255,255,.1);
+            color: #fff;
+            border-color: rgba(255,255,255,.18);
+        }
+        .theme-option .tp-swatch {
+            width: 14px;
+            height: 14px;
+            border-radius: 50%;
+            flex-shrink: 0;
+            border: 1px solid rgba(255,255,255,.2);
         }
     </style>
 </head>
 <body>
     <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
-        <div class="container">
-            <a class="navbar-brand d-flex align-items-center" href="/">
+        <div class="container d-flex align-items-center">
+            <a class="navbar-brand d-flex align-items-center me-3" href="/">
                 <img src="{{ url_for('static', filename='favicon-32x32.png') }}" alt="Magic Collector" width="28" height="28" class="me-2">
                 Magic Collector
             </a>
-            <div class="navbar-nav">
+            <div class="navbar-nav me-auto">
                 <a class="nav-link" href="/">Home</a>
                 <a class="nav-link" href="/collection">My Collection</a>
                 <a class="nav-link" href="/decks">Decks</a>
@@ -52,25 +122,182 @@
                 <a class="nav-link" href="/search">Search</a>
                 <a class="nav-link" href="/settings">Settings</a>
             </div>
+
+            <!-- Theme picker -->
+            <div class="theme-picker ms-2" id="themePicker">
+                <button class="theme-picker-btn" id="themePickerBtn" aria-haspopup="true" aria-expanded="false">
+                    <i class="fas fa-palette" style="font-size:.8rem;opacity:.8;"></i>
+                    <span id="themePickerLabel">Theme</span>
+                    <span class="tp-caret">▼</span>
+                </button>
+                <div class="theme-menu" role="menu">
+                    <div class="theme-option" role="menuitem" data-theme="default" onclick="setTheme('default')">
+                        <span class="tp-swatch" style="background: linear-gradient(135deg,#6c757d,#adb5bd);"></span>
+                        Default
+                    </div>
+                    <div class="theme-option" role="menuitem" data-theme="ice" onclick="setTheme('ice')">
+                        <span class="tp-swatch" style="background: linear-gradient(135deg,#6BB5E3,#B8E6FF);"></span>
+                        Kaldheim Ice
+                    </div>
+                    <div class="theme-option" role="menuitem" data-theme="dark" onclick="setTheme('dark')">
+                        <span class="tp-swatch" style="background: linear-gradient(135deg,#0a0e16,#9fdcef);"></span>
+                        Kaldheim Dark
+                    </div>
+                </div>
+            </div>
         </div>
     </nav>
 
-    <div class="container mt-4">
+    <div class="container mt-4" id="spaContent">
         {% block content %}{% endblock %}
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
     <script>
+        /* ── Global theme switcher ──────────────────────────────────────── */
+        const THEMES = {
+            default: { label: 'Default',       href: '' },
+            ice:     { label: 'Kaldheim Ice',  href: '/static/css/kaldheim-theme.css' },
+            dark:    { label: 'Kaldheim Dark', href: '/static/css/kaldheim-dark-theme.css' },
+        };
+
+        function setTheme(key) {
+            const theme = THEMES[key] || THEMES.default;
+            const link = document.getElementById('appThemeStylesheet');
+            link.href = theme.href;
+            link.disabled = !theme.href;
+            document.getElementById('themePickerLabel').textContent = theme.label;
+            // Mark active option
+            document.querySelectorAll('.theme-option').forEach(el => {
+                el.classList.toggle('active', el.dataset.theme === key);
+            });
+            localStorage.setItem('appTheme', key);
+            closeThemePicker();
+        }
+
+        function closeThemePicker() {
+            const picker = document.getElementById('themePicker');
+            picker.classList.remove('open');
+            document.getElementById('themePickerBtn').setAttribute('aria-expanded', 'false');
+        }
+
+        // Toggle open/close
+        document.getElementById('themePickerBtn').addEventListener('click', function(e) {
+            e.stopPropagation();
+            const picker = document.getElementById('themePicker');
+            const opening = !picker.classList.contains('open');
+            picker.classList.toggle('open', opening);
+            this.setAttribute('aria-expanded', String(opening));
+        });
+
+        // Close when clicking outside
+        document.addEventListener('click', function(e) {
+            if (!document.getElementById('themePicker').contains(e.target)) {
+                closeThemePicker();
+            }
+        });
+
+        // Sync picker label and active state (href is already set by the head script)
+        document.addEventListener('DOMContentLoaded', function() {
+            const saved = localStorage.getItem('appTheme') || 'default';
+            const theme = THEMES[saved] || THEMES.default;
+            document.getElementById('themePickerLabel').textContent = theme.label;
+            document.querySelectorAll('.theme-option').forEach(el => {
+                el.classList.toggle('active', el.dataset.theme === saved);
+            });
+        });
+
+        /* ── SPA Router ─────────────────────────────────────────────────── *
+         *  Intercepts same-origin link clicks and swaps #spaContent only,  *
+         *  keeping the navbar (and its loaded theme) alive across pages.   *
+         * ────────────────────────────────────────────────────────────────── */
+        (function() {
+            var pageAssets = []; // <link>/<style> hoisted from current page into <head>
+
+            function cleanPageAssets() {
+                pageAssets.forEach(function(el) { if (el.parentNode) el.parentNode.removeChild(el); });
+                pageAssets = [];
+            }
+
+            // Scripts injected via innerHTML do not execute; recreate them.
+            function runScripts(container) {
+                container.querySelectorAll('script').forEach(function(old) {
+                    var s = document.createElement('script');
+                    Array.from(old.attributes).forEach(function(a) { s.setAttribute(a.name, a.value); });
+                    s.textContent = old.textContent;
+                    old.parentNode.replaceChild(s, old);
+                });
+            }
+
+            function navigate(url, push) {
+                if (push === undefined) push = true;
+                document.querySelectorAll('.modal.show').forEach(function(el) {
+                    var m = bootstrap.Modal.getInstance(el);
+                    if (m) m.hide();
+                });
+
+                fetch(url)
+                    .then(function(r) {
+                        if (!r.ok) throw new Error(r.status);
+                        var finalUrl = new URL(r.url).pathname + new URL(r.url).search;
+                        return r.text().then(function(html) { return { html: html, url: finalUrl }; });
+                    })
+                    .then(function(res) {
+                        var doc = new DOMParser().parseFromString(res.html, 'text/html');
+                        var newEl = doc.getElementById('spaContent');
+                        var container = document.getElementById('spaContent');
+                        if (!newEl || !container) { window.location.href = url; return; }
+
+                        if (push) history.pushState({ url: res.url }, '', res.url);
+                        var t = doc.querySelector('title');
+                        if (t) document.title = t.textContent;
+
+                        cleanPageAssets();
+
+                        // Hoist page-specific <link>/<style> to <head> before replacement
+                        newEl.querySelectorAll('link[rel="stylesheet"], style').forEach(function(el) {
+                            document.head.appendChild(el);
+                            pageAssets.push(el);
+                        });
+
+                        // Safe: content is always fetched from same-origin only
+                        // (enforced by the origin check in the click handler below)
+                        container.innerHTML = newEl.innerHTML; // nosec
+                        runScripts(container);
+                        window.scrollTo(0, 0);
+                    })
+                    .catch(function() { window.location.href = url; });
+            }
+
+            window.spaNavigate = navigate;
+
+            document.addEventListener('click', function(e) {
+                var a = e.target.closest('a[href]');
+                if (!a) return;
+                if (a.hasAttribute('data-bs-toggle') || a.hasAttribute('data-bs-dismiss')) return;
+                if (a.hasAttribute('download') || a.target === '_blank' || a.hasAttribute('data-no-spa')) return;
+                var href = a.getAttribute('href');
+                if (!href || href.charAt(0) === '#') return;
+                try {
+                    var url = new URL(href, window.location.origin);
+                    if (url.origin !== window.location.origin) return; // enforce same-origin
+                    e.preventDefault();
+                    navigate(url.pathname + url.search + url.hash);
+                } catch(err) { /* invalid URL, let browser handle */ }
+            });
+
+            window.addEventListener('popstate', function() {
+                navigate(window.location.pathname + window.location.search + window.location.hash, false);
+            });
+        })();
+
+        /* ── Existing app helpers ───────────────────────────────────────── */
         function fetchSets() {
             fetch('/fetch_sets', { method: 'POST' })
                 .then(response => response.json())
                 .then(data => {
-                    if (data.success) {
-                        alert(data.message);
-                        location.reload();
-                    } else {
-                        alert('Error: ' + data.message);
-                    }
+                    if (data.success) { alert(data.message); location.reload(); }
+                    else { alert('Error: ' + data.message); }
                 });
         }
 
@@ -78,12 +305,8 @@
             fetch(`/fetch_cards/${setCode}`, { method: 'POST' })
                 .then(response => response.json())
                 .then(data => {
-                    if (data.success) {
-                        alert(data.message);
-                        location.reload();
-                    } else {
-                        alert('Error: ' + data.message);
-                    }
+                    if (data.success) { alert(data.message); location.reload(); }
+                    else { alert('Error: ' + data.message); }
                 });
         }
     </script>

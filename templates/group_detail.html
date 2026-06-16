@@ -52,10 +52,18 @@
 </div>
 
 {% if collection %}
-<div class="row">
+<div class="mb-3">
+    <div class="input-group">
+        <span class="input-group-text"><i class="fas fa-search"></i></span>
+        <input type="search" id="cardSearch" class="form-control" placeholder="Filter by card name or type..." oninput="filterCards()" autocomplete="off">
+        <button class="btn btn-outline-secondary" type="button" onclick="document.getElementById('cardSearch').value=''; filterCards();">Clear</button>
+    </div>
+    <small class="text-muted"><span id="cardMatchCount">{{ collection|length }}</span> of {{ collection|length }} cards shown</small>
+</div>
+<div class="row" id="cardsGrid">
     {% for card in collection %}
-    <div class="col-md-6 col-lg-4 mb-4">
-        <div class="card h-100 card-tile" style="cursor: pointer;" onclick="viewCard('{{ card[0] }}')">
+    <div class="col-md-6 col-lg-4 mb-4 card-tile-wrap" data-card-name="{{ card[1]|lower }}" data-card-type="{{ card[4]|lower }}">
+        <a href="/card/{{ card[0] }}?from=collection&group_id={{ group.id }}" class="card h-100 card-tile text-decoration-none" style="color: inherit;">
             <div class="card-img-top bg-light d-flex justify-content-center align-items-center" style="min-height: 200px; gap: 0.5rem;">
                 {% set image_data = card[37]|from_json %}
                 {% set faces = card[38]|from_json %}
@@ -97,7 +105,7 @@
                     </div>
                 </div>
             </div>
-        </div>
+        </a>
     </div>
     {% endfor %}
 </div>
@@ -156,8 +164,16 @@ input[type=number].no-spinner {
 </style>
 
 <script>
-function viewCard(cardId) {
-    window.location.href = `/card/${cardId}?from=collection&group_id={{ group.id }}`;
+function filterCards() {
+    const q = document.getElementById('cardSearch').value.trim().toLowerCase();
+    let shown = 0;
+    document.querySelectorAll('#cardsGrid .card-tile-wrap').forEach(tile => {
+        const match = !q || tile.dataset.cardName.includes(q) || tile.dataset.cardType.includes(q);
+        tile.style.display = match ? '' : 'none';
+        if (match) shown++;
+    });
+    const counter = document.getElementById('cardMatchCount');
+    if (counter) counter.textContent = shown;
 }
 function adjust(cardId, isFoil, delta) {
     const input = document.getElementById('quantity-' + cardId + '-' + isFoil);
@@ -180,7 +196,7 @@ function deleteGroup(id) {
     fetch('/collection_groups/' + id + '/delete', { method: 'POST' })
         .then(r => r.json())
         .then(d => {
-            if (d.success) window.location = '{{ url_for("view_collection") }}';
+            if (d.success) (window.spaNavigate || (u => { window.location.href = u; }))('{{ url_for("view_collection") }}');
             else alert(d.message);
         });
 }

@@ -20,6 +20,16 @@
             </div>
         </div>
         <div id="updateStatus" class="alert" style="display: none;"></div>
+        {% if groups %}
+        <div class="mb-3">
+            <div class="input-group">
+                <span class="input-group-text"><i class="fas fa-search"></i></span>
+                <input type="search" id="groupSearch" class="form-control" placeholder="Filter by group name or set code..." oninput="filterGroups()" autocomplete="off">
+                <button class="btn btn-outline-secondary" type="button" onclick="document.getElementById('groupSearch').value=''; filterGroups();">Clear</button>
+            </div>
+            <small class="text-muted"><span id="groupMatchCount">{{ groups|length }}</span> of {{ groups|length }} groups shown</small>
+        </div>
+        {% endif %}
         {% if total_collection_value %}
         <div class="alert alert-success">
             <h4 class="alert-heading"><i class="fas fa-dollar-sign"></i> Total Collection Value</h4>
@@ -29,10 +39,10 @@
     </div>
 </div>
 
-<div class="row">
+<div class="row" id="groupsGrid">
     {% for g in groups %}
-    <div class="col-md-6 col-lg-4 mb-4">
-        <div class="card h-100 group-card" style="cursor: pointer;" onclick="viewGroup({{ g.id }})">
+    <div class="col-md-6 col-lg-4 mb-4 group-tile" data-group-name="{{ g.name|lower }}" data-set-code="{{ (g.set_code or '')|lower }}">
+        <a href="/collection/{{ g.id }}" class="card h-100 group-card text-decoration-none" style="color: inherit;">
             <div class="card-img-top bg-light d-flex justify-content-center align-items-center" style="min-height: 160px; padding: 1rem;">
                 {% if g.image_url %}
                 <img src="{{ g.image_url }}" alt="{{ g.name }}" style="max-height: 140px; max-width: 100%; object-fit: contain;">
@@ -41,11 +51,7 @@
                 {% endif %}
             </div>
             <div class="card-body d-flex flex-column">
-                <h5 class="card-title">
-                    <a href="{{ url_for('view_collection_group', group_id=g.id) }}" class="text-decoration-none text-dark">
-                        {{ g.name }}
-                    </a>
-                </h5>
+                <h5 class="card-title">{{ g.name }}</h5>
                 <p class="text-muted small mb-2">
                     {% if g.set_code %}<span class="badge bg-secondary">Set: {{ g.set_code }}</span>{% else %}<span class="badge bg-info">Custom</span>{% endif %}
                     {% if g.id == default_group_id %}<span class="badge bg-primary">Default</span>{% endif %}
@@ -57,7 +63,7 @@
                     </div>
                 </div>
             </div>
-        </div>
+        </a>
     </div>
     {% else %}
     <div class="col-12">
@@ -108,8 +114,16 @@
 </style>
 
 <script>
-function viewGroup(groupId) {
-    window.location.href = `/collection/${groupId}`;
+function filterGroups() {
+    const q = document.getElementById('groupSearch').value.trim().toLowerCase();
+    let shown = 0;
+    document.querySelectorAll('#groupsGrid .group-tile').forEach(tile => {
+        const match = !q || tile.dataset.groupName.includes(q) || tile.dataset.setCode.includes(q);
+        tile.style.display = match ? '' : 'none';
+        if (match) shown++;
+    });
+    const counter = document.getElementById('groupMatchCount');
+    if (counter) counter.textContent = shown;
 }
 
 async function updateCollectionPrices() {

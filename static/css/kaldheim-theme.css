@@ -1,0 +1,413 @@
+:root {
+    /* Kaldheim Ice Theme - Cold, frosty colors inspired by the frozen plane */
+    --kaldheim-primary: #6BB5E3;      /* Ice blue - primary color */
+    --kaldheim-secondary: #4A90E2;   /* Deep ice blue - secondary color */
+    --kaldheim-tertiary: #B8E6FF;   /* Light ice blue - tertiary color */
+    --kaldheim-accent: #7DD3FC;      /* Bright ice accent */
+    --kaldheim-text: #2C3E50;        /* Dark text for contrast */
+    --kaldheim-text-light: #ECF0F1;  /* Light text */
+    --kaldheim-bg: #E8F5FF;          /* Light blue background */
+    --kaldheim-card-bg: #F8FBFF;     /* Card background */
+    --kaldheim-border: #B3D9FF;      /* Border color */
+    --kaldheim-success: #2ECC71;     /* Success green */
+    --kaldheim-warning: #F39C12;     /* Warning orange */
+    --kaldheim-danger: #E74C3C;      /* Danger red */
+    --kaldheim-info: #3498DB;        /* Info blue */
+    --kaldheim-shadow: rgba(74, 144, 226, 0.3); /* Blue shadow */
+    --kaldheim-hover: rgba(107, 181, 227, 0.1); /* Hover overlay */
+    
+    /* Gradient for special effects */
+    --kaldheim-gradient: linear-gradient(135deg, #6BB5E3 0%, #4A90E2 100%);
+    
+    /* Frost effects */
+    --kaldheim-frost: rgba(255, 255, 255, 0.3);
+    --kaldheim-frost-glow: rgba(184, 230, 255, 0.6);
+}
+
+/* Base styles - override Bootstrap defaults */
+body {
+    background-color: var(--kaldheim-bg) !important;
+    color: var(--kaldheim-text) !important;
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif !important;
+}
+
+/* Navigation */
+.navbar {
+    background: var(--kaldheim-gradient) !important;
+    box-shadow: 0 4px 12px var(--kaldheim-shadow) !important;
+    backdrop-filter: blur(10px);
+}
+
+.navbar-brand {
+    color: var(--kaldheim-text-light) !important;
+    font-weight: 600 !important;
+}
+
+.navbar-nav .nav-link {
+    color: var(--kaldheim-text-light) !important;
+    margin-right: 15px !important;
+    transition: all 0.3s ease !important;
+}
+
+.navbar-nav .nav-link:hover {
+    color: var(--kaldheim-text) !important;
+    background-color: rgba(255, 255, 255, 0.2) !important;
+    border-radius: 4px !important;
+}
+
+/* Cards */
+.card {
+    background: var(--kaldheim-card-bg) !important;
+    border: 1px solid var(--kaldheim-border) !important;
+    box-shadow: 0 4px 8px var(--kaldheim-shadow) !important;
+    transition: all 0.3s ease !important;
+    position: relative !important;
+    overflow: hidden !important;
+}
+
+.card::before {
+    content: '';
+    position: absolute !important;
+    top: 0 !important;
+    left: 0 !important;
+    width: 100% !important;
+    height: 4px !important;
+    background: var(--kaldheim-gradient) !important;
+}
+
+.card-header {
+    background: transparent !important;
+    border-bottom: 1px solid var(--kaldheim-border) !important;
+    color: var(--kaldheim-text) !important;
+}
+
+.card-body {
+    color: var(--kaldheim-text) !important;
+}
+
+/* Buttons */
+.btn-primary {
+    background-color: var(--kaldheim-secondary) !important;
+    border-color: var(--kaldheim-secondary) !important;
+    color: white !important;
+}
+
+.btn-primary:hover {
+    background-color: var(--kaldheim-primary) !important;
+    border-color: var(--kaldheim-primary) !important;
+    transform: translateY(-2px) !important;
+    box-shadow: 0 6px 12px var(--kaldheim-shadow) !important;
+}
+
+.btn-secondary {
+    background-color: var(--kaldheim-info) !important;
+    border-color: var(--kaldheim-info) !important;
+    color: white !important;
+}
+
+.btn-secondary:hover {
+    background-color: #2980b9 !important;
+    border-color: #2980b9 !important;
+}
+
+.btn-outline-primary {
+    color: var(--kaldheim-secondary) !important;
+    border-color: var(--kaldheim-secondary) !important;
+}
+
+.btn-outline-primary:hover {
+    background-color: var(--kaldheim-secondary) !important;
+    color: white !important;
+}
+
+.btn-success {
+    background-color: var(--kaldheim-success) !important;
+    border-color: var(--kaldheim-success) !important;
+}
+
+.btn-danger {
+    background-color: var(--kaldheim-danger) !important;
+    border-color: var(--kaldheim-danger) !important;
+}
+
+.btn-warning {
+    background-color: var(--kaldheim-warning) !important;
+    border-color: var(--kaldheim-warning) !important;
+}
+
+/* Alerts */
+.alert {
+    border-radius: 8px !important;
+    font-weight: 500 !important;
+}
+
+.alert-success {
+    background-color: rgba(46, 204, 113, 0.1) !important;
+    border-left: 4px solid var(--kaldheim-success) !important;
+    color: #27ae60 !important;
+}
+
+.alert-info {
+    background-color: rgba(52, 152, 219, 0.1) !important;
+    border-left: 4px solid var(--kaldheim-info) !important;
+    color: #3498db !important;
+}
+
+.alert-warning {
+    background-color: rgba(243, 156, 18, 0.1) !important;
+    border-left: 4px solid var(--kaldheim-warning) !important;
+    color: #f39c12 !important;
+}
+
+.alert-danger {
+    background-color: rgba(231, 76, 60, 0.1) !important;
+    border-left: 4px solid var(--kaldheim-danger) !important;
+    color: #e74c3c !important;
+}
+
+/* Badges */
+.badge {
+    font-weight: 500 !important;
+}
+
+.badge-primary {
+    background-color: var(--kaldheim-secondary) !important;
+}
+
+.badge-success {
+    background-color: var(--kaldheim-success) !important;
+}
+
+.badge-info {
+    background-color: var(--kaldheim-info) !important;
+}
+
+.badge-warning {
+    background-color: var(--kaldheim-warning) !important;
+}
+
+.badge-danger {
+    background-color: var(--kaldheim-danger) !important;
+}
+
+/* Forms */
+.form-control {
+    border: 2px solid var(--kaldheim-border) !important;
+    border-radius: 6px !important;
+    transition: all 0.3s ease !important;
+}
+
+.form-control:focus {
+    border-color: var(--kaldheim-secondary) !important;
+    box-shadow: 0 0 0 0.2rem rgba(74, 144, 226, 0.3) !important;
+}
+
+/* Tables */
+.table {
+    color: var(--kaldheim-text) !important;
+}
+
+.table thead th {
+    background-color: var(--kaldheim-card-bg) !important;
+    border-bottom: 2px solid var(--kaldheim-border) !important;
+}
+
+/* Navigation pills */
+.nav-pills .nav-link {
+    color: var(--kaldheim-text) !important;
+    border-radius: 30px !important;
+}
+
+.nav-pills .nav-link.active {
+    background-color: var(--kaldheim-secondary) !important;
+    color: white !important;
+}
+
+/* Progress bars */
+.progress {
+    background-color: var(--kaldheim-border) !important;
+    height: 10px !important;
+    border-radius: 5px !important;
+}
+
+.progress-bar {
+    background-color: var(--kaldheim-secondary) !important;
+}
+
+/* Frosty effects for cards */
+.card-image {
+    filter: drop-shadow(0 4px 8px var(--kaldheim-frost-glow)) !important;
+}
+
+/* Hover effects */
+.set-card:hover, .group-card:hover {
+    transform: translateY(-5px) !important;
+    box-shadow: 0 8px 25px var(--kaldheim-shadow) !important;
+    border-top: 3px solid var(--kaldheim-accent) !important;
+}
+
+/* Special Kaldheim elements */
+.kaldheim-snowflake {
+    color: var(--kaldheim-frost) !important;
+    font-size: 1.2em !important;
+}
+
+.kaldheim-frost-effect {
+    position: relative !important;
+    overflow: hidden !important;
+}
+
+.kaldheim-frost-effect::before {
+    content: none !important;
+}
+
+/* Special Kaldheim header */
+.kaldheim-header {
+    background: var(--kaldheim-gradient) !important;
+    color: white !important;
+    padding: 20px !important;
+    border-radius: 10px !important;
+    margin-bottom: 20px !important;
+    position: relative !important;
+    overflow: hidden !important;
+}
+
+.kaldheim-header::after {
+    content: '❄️';
+    position: absolute !important;
+    top: 10px !important;
+    right: 20px !important;
+    font-size: 2rem !important;
+    opacity: 0.3 !important;
+}
+
+/* Theme toggle switch */
+.theme-toggle {
+    transition: all 0.3s ease !important;
+}
+
+.theme-toggle:hover {
+    transform: scale(1.05) !important;
+}
+
+/* Special Kaldheim icons */
+.kaldheim-icon {
+    position: relative !important;
+}
+
+.kaldheim-icon::after {
+    content: '❄️';
+    position: absolute !important;
+    top: -5px !important;
+    right: -10px !important;
+    font-size: 0.6em !important;
+    opacity: 0.7 !important;
+}
+
+/* ── Modals ──────────────────────────────────────────────────────────── */
+
+/* Backdrop */
+.modal-backdrop { background-color: rgba(44, 62, 80, .5) !important; }
+.modal-backdrop.show { opacity: 1 !important; }
+
+/* Dialog shell */
+.modal-content {
+    background-color: var(--kaldheim-card-bg) !important;
+    border: 1px solid var(--kaldheim-border) !important;
+    border-radius: 10px !important;
+    color: var(--kaldheim-text) !important;
+    box-shadow: 0 12px 40px var(--kaldheim-shadow) !important;
+}
+
+/* Header */
+.modal-header {
+    background: var(--kaldheim-gradient) !important;
+    border-bottom: 1px solid var(--kaldheim-border) !important;
+    border-radius: 9px 9px 0 0 !important;
+    padding: 14px 18px !important;
+}
+
+.modal-title {
+    color: #fff !important;
+    font-weight: 600 !important;
+}
+
+/* Close button — invert so it's visible on the blue header */
+.modal-header .btn-close {
+    filter: invert(1) !important;
+    opacity: .8 !important;
+}
+.modal-header .btn-close:hover { opacity: 1 !important; }
+
+/* Body */
+.modal-body {
+    background-color: var(--kaldheim-card-bg) !important;
+    color: var(--kaldheim-text) !important;
+    padding: 18px !important;
+}
+
+.modal-body .form-text {
+    color: #6c757d !important;
+}
+
+/* Loading spinner */
+.modal-body .spinner-border.text-primary {
+    color: var(--kaldheim-secondary) !important;
+}
+
+/* Footer */
+.modal-footer {
+    background-color: var(--kaldheim-bg) !important;
+    border-top: 1px solid var(--kaldheim-border) !important;
+    border-radius: 0 0 9px 9px !important;
+    padding: 12px 18px !important;
+}
+
+/* ── Search bars ─────────────────────────────────────────────────────── */
+
+/* Icon wrapper — ice-blue tint matching the gradient */
+.input-group .input-group-text {
+    background-color: var(--kaldheim-secondary) !important;
+    border: 1px solid var(--kaldheim-secondary) !important;
+    border-radius: 6px 0 0 6px !important;
+    color: #fff !important;
+}
+
+/* Text input — square corners, themed border & background */
+.input-group .form-control {
+    background-color: var(--kaldheim-card-bg) !important;
+    border: 1px solid var(--kaldheim-border) !important;
+    border-radius: 0 !important;
+    color: var(--kaldheim-text) !important;
+}
+
+.input-group .form-control:focus {
+    border-color: var(--kaldheim-secondary) !important;
+    box-shadow: 0 0 0 0.2rem rgba(74, 144, 226, 0.2) !important;
+}
+
+/* Clear button — square, themed outline */
+.input-group .btn-outline-secondary {
+    border: 1px solid var(--kaldheim-border) !important;
+    border-radius: 0 6px 6px 0 !important;
+    color: var(--kaldheim-text) !important;
+    background-color: var(--kaldheim-bg) !important;
+}
+
+.input-group .btn-outline-secondary:hover {
+    background-color: var(--kaldheim-secondary) !important;
+    border-color: var(--kaldheim-secondary) !important;
+    color: #fff !important;
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+    .navbar-nav {
+        flex-direction: column !important;
+        align-items: center !important;
+    }
+
+    .card {
+        margin-bottom: 15px !important;
+    }
+}

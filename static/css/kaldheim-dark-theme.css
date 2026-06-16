@@ -1,0 +1,499 @@
+@import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@500;600;700&family=Spectral:ital,wght@0,300;0,400;0,500;0,600;1,400&display=swap');
+
+:root {
+    /* Kaldheim Dark Theme - dark, frosted navy with frost-cyan & gold accents.
+       Palette mirrors the `T` object in example/kaldheim-peasant-forge.jsx */
+    --forge-bg: #0a0e16;          /* deepest background */
+    --forge-bg2: #0e141f;         /* secondary background (modals) */
+    --forge-panel: #121b29;       /* panel / card background */
+    --forge-panel2: #0f1622;      /* inset / input background */
+    --forge-line: #243246;        /* borders */
+    --forge-line-soft: #1a2434;   /* soft dividers */
+    --forge-frost: #9fdcef;       /* frost-cyan primary accent */
+    --forge-frost-dim: #5a8ea3;   /* dimmed frost */
+    --forge-gold: #d8b974;        /* gold accent */
+    --forge-gold-dim: #8a754a;    /* dimmed gold */
+    --forge-text: #e3ebf3;        /* primary text */
+    --forge-mut: #8295ab;         /* muted text */
+    --forge-mut2: #5d6e83;        /* very muted text */
+    --forge-good: #7fd6a0;        /* success green */
+    --forge-bad: #e2796b;         /* danger red */
+
+    /* Shimmering frost+gold gradient used for the title band */
+    --forge-titlebar: linear-gradient(100deg, rgba(159, 220, 239, 0.07), rgba(216, 185, 116, 0.07), rgba(159, 220, 239, 0.07));
+    --forge-frost-gradient: linear-gradient(180deg, var(--forge-frost), var(--forge-frost-dim));
+}
+
+/* Base styles - override Bootstrap defaults */
+body {
+    background-color: var(--forge-bg) !important;
+    color: var(--forge-text) !important;
+    font-family: 'Spectral', Georgia, serif !important;
+}
+
+/* Custom scrollbar to match the forge */
+::-webkit-scrollbar { width: 9px; height: 9px; }
+::-webkit-scrollbar-track { background: var(--forge-panel2); }
+::-webkit-scrollbar-thumb { background: var(--forge-line); border-radius: 8px; }
+::-webkit-scrollbar-thumb:hover { background: var(--forge-frost-dim); }
+
+/* Display headings use Cinzel, like the .kf-display class in the JSX */
+h1, h2, h3, h4, h5, h6, .navbar-brand {
+    font-family: 'Cinzel', serif !important;
+    letter-spacing: 0.04em !important;
+    color: var(--forge-text) !important;
+}
+
+/* Navigation */
+.navbar {
+    background: var(--forge-titlebar), var(--forge-panel) !important;
+    background-size: 200% 100%, auto !important;
+    border-bottom: 1px solid var(--forge-line) !important;
+    box-shadow: 0 4px 18px rgba(0, 0, 0, 0.5) !important;
+    animation: forge-shimmer 9s linear infinite;
+}
+
+@keyframes forge-shimmer {
+    0% { background-position: -200% 0; }
+    100% { background-position: 200% 0; }
+}
+
+.navbar-brand {
+    color: var(--forge-text) !important;
+    font-weight: 700 !important;
+    text-shadow: 0 0 22px rgba(159, 220, 239, 0.2) !important;
+}
+
+.navbar-nav .nav-link {
+    color: var(--forge-mut) !important;
+    margin-right: 15px !important;
+    transition: all 0.15s ease !important;
+}
+
+.navbar-nav .nav-link:hover {
+    color: var(--forge-frost) !important;
+    background-color: rgba(159, 220, 239, 0.08) !important;
+    border-radius: 6px !important;
+}
+
+/* Cards / panels */
+.card {
+    background: var(--forge-panel) !important;
+    border: 1px solid var(--forge-line) !important;
+    border-radius: 11px !important;
+    color: var(--forge-text) !important;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.02) !important;
+    transition: all 0.15s ease !important;
+    position: relative !important;
+    overflow: hidden !important;
+}
+
+.card::before {
+    content: '';
+    position: absolute !important;
+    top: 0 !important;
+    left: 0 !important;
+    width: 100% !important;
+    height: 3px !important;
+    background: var(--forge-frost-gradient) !important;
+}
+
+.card-header {
+    background: transparent !important;
+    border-bottom: 1px solid var(--forge-line) !important;
+    color: var(--forge-frost) !important;
+    text-transform: uppercase !important;
+    letter-spacing: 0.07em !important;
+}
+
+.card-header h5, .card-header h3 {
+    color: var(--forge-frost) !important;
+    font-size: 0.95rem !important;
+}
+
+.card-body { color: var(--forge-text) !important; }
+.card-title { color: var(--forge-text) !important; }
+
+/* Muted text */
+.text-muted { color: var(--forge-mut) !important; }
+.text-primary { color: var(--forge-frost) !important; }
+.text-info { color: var(--forge-frost) !important; }
+.text-success { color: var(--forge-good) !important; }
+.text-warning { color: var(--forge-gold) !important; }
+.text-danger { color: var(--forge-bad) !important; }
+
+/* Buttons */
+.btn-primary {
+    background-color: rgba(159, 220, 239, 0.12) !important;
+    border: 1px solid var(--forge-frost-dim) !important;
+    color: var(--forge-frost) !important;
+    font-weight: 600 !important;
+}
+
+.btn-primary:hover {
+    background-color: rgba(159, 220, 239, 0.22) !important;
+    border-color: var(--forge-frost) !important;
+    color: var(--forge-frost) !important;
+    transform: translateY(-2px) !important;
+    box-shadow: 0 6px 16px rgba(159, 220, 239, 0.18) !important;
+}
+
+.btn-secondary {
+    background-color: var(--forge-panel2) !important;
+    border: 1px solid var(--forge-line) !important;
+    color: var(--forge-mut) !important;
+}
+
+.btn-secondary:hover {
+    background-color: var(--forge-panel) !important;
+    border-color: var(--forge-frost-dim) !important;
+    color: var(--forge-frost) !important;
+}
+
+.btn-outline-primary {
+    color: var(--forge-frost) !important;
+    border-color: var(--forge-frost-dim) !important;
+}
+
+.btn-outline-primary:hover {
+    background-color: rgba(159, 220, 239, 0.14) !important;
+    border-color: var(--forge-frost) !important;
+    color: var(--forge-frost) !important;
+}
+
+.btn-outline-light {
+    color: var(--forge-gold) !important;
+    border-color: var(--forge-gold-dim) !important;
+}
+
+.btn-outline-light:hover {
+    background-color: rgba(216, 185, 116, 0.14) !important;
+    color: var(--forge-gold) !important;
+}
+
+.btn-success {
+    background-color: rgba(127, 214, 160, 0.14) !important;
+    border: 1px solid var(--forge-good) !important;
+    color: var(--forge-good) !important;
+}
+
+.btn-danger {
+    background-color: rgba(226, 121, 107, 0.14) !important;
+    border: 1px solid var(--forge-bad) !important;
+    color: var(--forge-bad) !important;
+}
+
+.btn-warning {
+    background-color: rgba(216, 185, 116, 0.14) !important;
+    border: 1px solid var(--forge-gold) !important;
+    color: var(--forge-gold) !important;
+}
+
+/* Alerts */
+.alert {
+    border-radius: 8px !important;
+    font-weight: 500 !important;
+    background-color: var(--forge-panel2) !important;
+    color: var(--forge-text) !important;
+}
+
+.alert-success {
+    background-color: rgba(127, 214, 160, 0.1) !important;
+    border-left: 4px solid var(--forge-good) !important;
+    color: var(--forge-good) !important;
+}
+
+.alert-info {
+    background-color: rgba(159, 220, 239, 0.1) !important;
+    border-left: 4px solid var(--forge-frost) !important;
+    color: var(--forge-frost) !important;
+}
+
+.alert-warning {
+    background-color: rgba(216, 185, 116, 0.1) !important;
+    border-left: 4px solid var(--forge-gold) !important;
+    color: var(--forge-gold) !important;
+}
+
+.alert-danger {
+    background-color: rgba(226, 121, 107, 0.1) !important;
+    border-left: 4px solid var(--forge-bad) !important;
+    color: var(--forge-bad) !important;
+}
+
+/* Badges */
+.badge { font-weight: 600 !important; color: #06202b !important; }
+.badge.bg-primary { background-color: var(--forge-frost) !important; }
+.badge.bg-success { background-color: var(--forge-good) !important; }
+.badge.bg-info { background-color: var(--forge-frost) !important; }
+.badge.bg-warning { background-color: var(--forge-gold) !important; }
+.badge.bg-danger { background-color: var(--forge-bad) !important; }
+.badge.bg-secondary { background-color: var(--forge-mut) !important; }
+
+/* Forms */
+.form-control, .form-select {
+    background-color: var(--forge-panel2) !important;
+    border: 1px solid var(--forge-line) !important;
+    border-radius: 7px !important;
+    color: var(--forge-text) !important;
+    transition: all 0.15s ease !important;
+}
+
+.form-control::placeholder { color: var(--forge-mut2) !important; }
+
+.form-control:focus, .form-select:focus {
+    background-color: var(--forge-panel2) !important;
+    border-color: var(--forge-frost-dim) !important;
+    box-shadow: 0 0 0 0.2rem rgba(159, 220, 239, 0.18) !important;
+    color: var(--forge-text) !important;
+}
+
+.form-label { color: var(--forge-mut) !important; }
+
+.form-check-input {
+    background-color: var(--forge-panel2) !important;
+    border: 1px solid var(--forge-line) !important;
+}
+
+.form-check-input:checked {
+    background-color: var(--forge-frost) !important;
+    border-color: var(--forge-frost) !important;
+}
+
+/* Tables */
+.table {
+    color: var(--forge-text) !important;
+    --bs-table-bg: transparent !important;
+    --bs-table-color: var(--forge-text) !important;
+}
+
+.table thead th {
+    background-color: var(--forge-panel2) !important;
+    border-bottom: 2px solid var(--forge-line) !important;
+    color: var(--forge-frost) !important;
+}
+
+.table td, .table th {
+    border-color: var(--forge-line-soft) !important;
+}
+
+/* Navigation pills */
+.nav-pills .nav-link {
+    color: var(--forge-mut) !important;
+    border-radius: 30px !important;
+}
+
+.nav-pills .nav-link.active {
+    background-color: rgba(159, 220, 239, 0.14) !important;
+    color: var(--forge-frost) !important;
+}
+
+/* Progress bars */
+.progress {
+    background-color: var(--forge-panel2) !important;
+    height: 10px !important;
+    border-radius: 5px !important;
+}
+
+.progress-bar {
+    background: var(--forge-frost-gradient) !important;
+    box-shadow: 0 0 10px rgba(159, 220, 239, 0.27) !important;
+}
+
+.progress-bar.bg-success { background: var(--forge-good) !important; }
+.progress-bar.bg-info { background: var(--forge-frost) !important; }
+
+/* Collection page — group card icons and names */
+
+/* Font Awesome fallback icon */
+.group-card .card-img-top i,
+.group-card .card-img-top .fa-folder-open,
+.group-card .card-img-top [class*="fa-"] {
+    color: var(--forge-frost) !important;
+    filter: drop-shadow(0 0 6px rgba(159, 220, 239, 0.55)) !important;
+}
+
+/* SVG set icons loaded via <img>.
+   Chain: collapse to black → invert to white → sepia → hue-rotate to 194° → saturate → brightness
+   Result closely matches --forge-frost (#9fdcef, HSL 194° 71% 78%). */
+.group-card .card-img-top img {
+    filter:
+        brightness(0)
+        invert(1)
+        sepia(1)
+        hue-rotate(158deg)
+        saturate(180%)
+        brightness(93%)
+        drop-shadow(0 0 7px rgba(159, 220, 239, 0.5)) !important;
+}
+
+.group-card .card-title a,
+.group-card .card-title a.text-dark {
+    color: var(--forge-text) !important;
+}
+
+/* Hover lift for set/group cards */
+.set-card:hover, .group-card:hover {
+    transform: translateY(-5px) !important;
+    border-top: 3px solid var(--forge-frost) !important;
+    box-shadow: 0 8px 28px rgba(0, 0, 0, 0.55) !important;
+}
+
+/* Card image wells default to dark, not Bootstrap's bg-light */
+.card-img-top.bg-light, .bg-light {
+    background-color: var(--forge-panel2) !important;
+}
+
+/* Inline code chips */
+code {
+    color: var(--forge-gold) !important;
+    background-color: var(--forge-panel2) !important;
+    padding: 1px 5px !important;
+    border-radius: 4px !important;
+}
+
+/* Forge header band (re-skins the .kaldheim-header used by the demo) */
+.kaldheim-header,
+.forge-header {
+    background: var(--forge-titlebar), var(--forge-panel) !important;
+    background-size: 200% 100%, auto !important;
+    border: 1px solid var(--forge-line) !important;
+    color: var(--forge-text) !important;
+    padding: 22px !important;
+    border-radius: 10px !important;
+    margin-bottom: 20px !important;
+    position: relative !important;
+    overflow: hidden !important;
+    animation: forge-shimmer 9s linear infinite;
+}
+
+.kaldheim-header::after,
+.forge-header::after {
+    content: '⚒';
+    position: absolute !important;
+    top: 14px !important;
+    right: 22px !important;
+    font-size: 2rem !important;
+    color: var(--forge-gold) !important;
+    opacity: 0.4 !important;
+}
+
+/* Theme toggle helper */
+.theme-toggle { transition: all 0.15s ease !important; }
+.theme-toggle:hover { transform: scale(1.05) !important; }
+
+/* ── Modals ──────────────────────────────────────────────────────────── */
+
+/* Backdrop */
+.modal-backdrop { background-color: #000 !important; }
+.modal-backdrop.show { opacity: .65 !important; }
+
+/* Dialog shell */
+.modal-content {
+    background-color: var(--forge-bg2) !important;
+    border: 1px solid var(--forge-line) !important;
+    border-radius: 12px !important;
+    color: var(--forge-text) !important;
+    box-shadow: 0 24px 70px rgba(0, 0, 0, .65) !important;
+}
+
+/* Header */
+.modal-header {
+    background-color: var(--forge-panel) !important;
+    border-bottom: 1px solid var(--forge-line) !important;
+    border-radius: 11px 11px 0 0 !important;
+    padding: 14px 18px !important;
+}
+
+.modal-title {
+    color: var(--forge-frost) !important;
+    font-family: 'Cinzel', serif !important;
+    letter-spacing: .05em !important;
+    font-size: 1rem !important;
+}
+
+/* Close button */
+.modal-header .btn-close {
+    filter: invert(1) brightness(.7) !important;
+    opacity: .6 !important;
+}
+.modal-header .btn-close:hover { opacity: 1 !important; }
+
+/* Body */
+.modal-body {
+    background-color: var(--forge-bg2) !important;
+    color: var(--forge-text) !important;
+    padding: 18px !important;
+}
+
+/* Helper text inside modals */
+.modal-body .form-text {
+    color: var(--forge-mut) !important;
+}
+
+/* Loading spinner */
+.modal-body .spinner-border.text-primary {
+    color: var(--forge-frost) !important;
+}
+
+/* Footer */
+.modal-footer {
+    background-color: var(--forge-panel) !important;
+    border-top: 1px solid var(--forge-line) !important;
+    border-radius: 0 0 11px 11px !important;
+    padding: 12px 18px !important;
+}
+
+/* ── Search bars ─────────────────────────────────────────────────────── */
+
+/* Icon wrapper — frost-cyan background with matching border */
+.input-group .input-group-text {
+    background-color: rgba(159, 220, 239, 0.12) !important;
+    border: 1px solid var(--forge-frost-dim) !important;
+    border-radius: 6px 0 0 6px !important;
+    color: var(--forge-frost) !important;
+    text-shadow: 0 0 8px rgba(159, 220, 239, 0.6) !important;
+}
+
+/* Text input — square corners, dark panel background */
+.input-group .form-control {
+    background-color: var(--forge-panel2) !important;
+    border: 1px solid var(--forge-line) !important;
+    border-radius: 0 !important;
+    color: var(--forge-text) !important;
+}
+
+.input-group .form-control:focus {
+    background-color: var(--forge-panel2) !important;
+    border-color: var(--forge-frost-dim) !important;
+    box-shadow: 0 0 0 0.2rem rgba(159, 220, 239, 0.15) !important;
+    color: var(--forge-text) !important;
+}
+
+.input-group .form-control::placeholder {
+    color: var(--forge-mut2) !important;
+}
+
+/* Clear button — square, muted outline */
+.input-group .btn-outline-secondary {
+    background-color: var(--forge-panel2) !important;
+    border: 1px solid var(--forge-line) !important;
+    border-radius: 0 6px 6px 0 !important;
+    color: var(--forge-mut) !important;
+}
+
+.input-group .btn-outline-secondary:hover {
+    background-color: rgba(159, 220, 239, 0.12) !important;
+    border-color: var(--forge-frost-dim) !important;
+    color: var(--forge-frost) !important;
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+    .navbar-nav {
+        flex-direction: column !important;
+        align-items: center !important;
+    }
+
+    .card { margin-bottom: 15px !important; }
+}

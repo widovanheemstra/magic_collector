@@ -1342,6 +1342,11 @@ def view_settings():
     """Settings page"""
     return render_template('settings.html')
 
+@app.route('/theme-demo')
+def view_theme_demo():
+    """Theme demo page showing Kaldheim theme"""
+    return render_template('theme_demo.html')
+
 @app.route('/get_database_stats')
 def get_database_stats():
     """Get database statistics"""

@@ -126,7 +126,7 @@
 
 <script>
 function viewSetCards(setCode) {
-    window.location.href = `/cards/${setCode}`;
+    (window.spaNavigate || (u => { window.location.href = u; }))(`/cards/${setCode}`);
 }
 
 function filterSets() {
@@ -152,7 +152,7 @@ function addSetToCollection(setCode, btn) {
             alert(d.message || (d.success ? 'Done' : 'Failed'));
             btn.disabled = false;
             btn.innerHTML = original;
-            if (d.success && d.group_id) window.location = '/collection/' + d.group_id;
+            if (d.success && d.group_id) (window.spaNavigate || (u => { window.location.href = u; }))('/collection/' + d.group_id);
         })
         .catch(e => {
             alert('Error: ' + e.message);

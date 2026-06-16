@@ -13,10 +13,18 @@
         </div>
 
         {% if decks %}
-            <div class="row">
+            <div class="mb-3">
+                <div class="input-group">
+                    <span class="input-group-text"><i class="fas fa-search"></i></span>
+                    <input type="search" id="deckSearch" class="form-control" placeholder="Filter by name, format, or description..." oninput="filterDecks()" autocomplete="off">
+                    <button class="btn btn-outline-secondary" type="button" onclick="document.getElementById('deckSearch').value=''; filterDecks();">Clear</button>
+                </div>
+                <small class="text-muted"><span id="deckMatchCount">{{ decks|length }}</span> of {{ decks|length }} decks shown</small>
+            </div>
+            <div class="row" id="decksGrid">
                 {% for deck in decks %}
-                <div class="col-md-6 col-lg-4 mb-4">
-                    <div class="card h-100 deck-card" style="cursor: pointer;" onclick="viewDeck({{ deck.id }})">
+                <div class="col-md-6 col-lg-4 mb-4 deck-tile" data-deck-name="{{ deck.name|lower }}" data-deck-format="{{ (deck.format or '')|lower }}" data-deck-desc="{{ (deck.description or '')|lower }}">
+                    <a href="/deck/{{ deck.id }}" class="card h-100 deck-card text-decoration-none" style="color: inherit;">
                         <div class="card-header">
                             <h5 class="card-title mb-0">{{ deck.name }}</h5>
                         </div>
@@ -63,7 +71,7 @@
                                 {% endif %}
                             </small>
                         </div>
-                    </div>
+                    </a>
                 </div>
                 {% endfor %}
             </div>
@@ -82,8 +90,19 @@
 
 
 <script>
-function viewDeck(deckId) {
-    window.location.href = `/deck/${deckId}`;
+function filterDecks() {
+    const q = document.getElementById('deckSearch').value.trim().toLowerCase();
+    let shown = 0;
+    document.querySelectorAll('#decksGrid .deck-tile').forEach(tile => {
+        const match = !q
+            || tile.dataset.deckName.includes(q)
+            || tile.dataset.deckFormat.includes(q)
+            || tile.dataset.deckDesc.includes(q);
+        tile.style.display = match ? '' : 'none';
+        if (match) shown++;
+    });
+    const counter = document.getElementById('deckMatchCount');
+    if (counter) counter.textContent = shown;
 }
 </script>
 
