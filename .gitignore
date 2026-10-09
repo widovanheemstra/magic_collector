@@ -14,4 +14,7 @@ static/group_images/*
 !static/group_images/.gitkeep
 static/deck_images/*
 !static/deck_images/.gitkeep
+static/cards/*
+!static/cards/.gitkeep
+References/
 
