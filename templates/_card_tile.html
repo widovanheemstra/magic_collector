@@ -1,0 +1,50 @@
+{# Reusable collection card tile. Expects: `card` (dict from card_dict_from_row),
+   `link_url`, and optionally `show_steppers` + `group`. #}
+{% set img = (card.image_uris.normal or card.image_uris.large) if card.image_uris else None %}
+{% if not img and card.card_faces and card.card_faces[0].image_uris %}
+    {% set img = card.card_faces[0].image_uris.normal or card.card_faces[0].image_uris.large %}
+{% endif %}
+
+<div class="mc-card-tile" data-card-id="{{ card.id }}"
+     data-price-nf="{{ '%.2f'|format(card.price or 0) }}"
+     data-price-f="{{ '%.2f'|format(card.price_foil or 0) }}"
+     data-filter-name="{{ card.name|lower }}">
+    <div class="mc-card-frame">
+        <a class="mc-card-link" href="{{ link_url }}">
+            {% if img %}
+            <img class="mc-img-card" src="{{ img }}" alt="{{ card.name }}" loading="lazy">
+            {% else %}
+            <span class="mc-img-card mc-img-placeholder" aria-hidden="true"></span>
+            {% endif %}
+        </a>
+        {% if card.qty_regular or card.qty_foil %}
+        <div class="mc-qty-badges">
+            {% if card.qty_regular %}<span class="mc-qty-badge" id="badge-{{ card.id }}-0">{{ card.qty_regular }}×</span>{% endif %}
+            {% if card.qty_foil %}<span class="mc-qty-badge mc-qty-foil" id="badge-{{ card.id }}-1">★ {{ card.qty_foil }}×</span>{% endif %}
+        </div>
+        {% endif %}
+        {% if show_steppers %}
+        <div class="mc-steppers">
+            <div class="mc-stepper">
+                <button type="button" class="mc-step-btn" tabindex="-1" data-finish="0" data-delta="-1" aria-label="Decrease regular copies">−</button>
+                <span class="mc-step-qty" id="qty-{{ card.id }}-0" data-finish="0">{{ card.qty_regular }}</span>
+                <button type="button" class="mc-step-btn" tabindex="-1" data-finish="0" data-delta="1" aria-label="Increase regular copies">+</button>
+                <span class="mc-step-label">Regular</span>
+            </div>
+            <div class="mc-stepper mc-stepper-foil">
+                <button type="button" class="mc-step-btn" tabindex="-1" data-finish="1" data-delta="-1" aria-label="Decrease foil copies">−</button>
+                <span class="mc-step-qty" id="qty-{{ card.id }}-1" data-finish="1">{{ card.qty_foil }}</span>
+                <button type="button" class="mc-step-btn" tabindex="-1" data-finish="1" data-delta="1" aria-label="Increase foil copies">+</button>
+                <span class="mc-step-label">★ Foil</span>
+            </div>
+            <a class="mc-step-open" href="{{ link_url }}">Open card →</a>
+        </div>
+        {% endif %}
+    </div>
+    <div class="mc-card-foot">
+        <span class="mc-card-name"><a href="{{ link_url }}">{{ card.name }}</a></span>
+        <span class="mc-card-price" id="value-{{ card.id }}">
+            {%- if card.line_total %}{{ currency_symbol }}{{ "%.2f"|format(card.line_total) }}{% endif -%}
+        </span>
+    </div>
+</div>

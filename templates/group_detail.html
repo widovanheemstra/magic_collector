@@ -3,123 +3,158 @@
 {% block title %}{{ group.name }} - Magic Collector{% endblock %}
 
 {% block content %}
-<div class="row">
-    <div class="col-12">
-        <nav aria-label="breadcrumb" class="mb-2">
-            <ol class="breadcrumb">
-                <li class="breadcrumb-item"><a href="{{ url_for('view_collection') }}">My Collection</a></li>
-                <li class="breadcrumb-item active">{{ group.name }}</li>
-            </ol>
-        </nav>
-        <div class="d-flex justify-content-between align-items-center mb-4">
-            <div class="d-flex align-items-center">
-                {% if group.image_url %}
-                <img src="{{ group.image_url }}" alt="" style="max-height: 48px; max-width: 48px; object-fit: contain;" class="me-3">
+<div class="mc-page-head">
+    <div class="d-flex align-items-center gap-3">
+        {% if group.image_url %}
+        <img class="mc-head-cover" src="{{ group.image_url }}" alt="">
+        {% endif %}
+        <div>
+            <nav class="mc-breadcrumb">
+                <a href="{{ url_for('view_collection') }}">Collection</a>
+                <span>/</span>
+                {% if group.set_code %}
+                <a href="{{ url_for('view_sets') }}">Sets</a>
+                <span>/</span>
                 {% endif %}
-                <div>
-                    <h1 class="mb-0">{{ group.name }}</h1>
-                    <p class="text-muted mb-0">
-                        {% if group.set_code %}<span class="badge bg-secondary">Set: {{ group.set_code }}</span>{% else %}<span class="badge bg-info">Custom</span>{% endif %}
-                        {% if group.is_default %}<span class="badge bg-primary">Default</span>{% endif %}
-                        · {{ collection|length }} card(s)
-                    </p>
-                </div>
-            </div>
-            <div class="d-flex align-items-center gap-2">
-                <div class="btn-group btn-group-sm" role="group">
-                    <a href="{{ url_for('view_collection_group', group_id=group.id, sort='collector_number') }}" class="btn btn-outline-secondary {% if sort_mode == 'collector_number' %}active{% endif %}">
-                        <i class="fas fa-sort-numeric-down"></i> Collector
-                    </a>
-                    <a href="{{ url_for('view_collection_group', group_id=group.id, sort='color') }}" class="btn btn-outline-secondary {% if sort_mode == 'color' %}active{% endif %}">
-                        <i class="fas fa-palette"></i> Color
-                    </a>
-                    <a href="{{ url_for('view_collection_group', group_id=group.id, sort='rarity') }}" class="btn btn-outline-secondary {% if sort_mode == 'rarity' %}active{% endif %}">
-                        <i class="fas fa-star"></i> Rarity
-                    </a>
-                </div>
-                <button class="btn btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#editGroupModal"><i class="fas fa-pen"></i> Edit</button>
-                {% if not group.is_default %}
-                <button class="btn btn-outline-danger" onclick="deleteGroup({{ group.id }})"><i class="fas fa-trash"></i> Delete</button>
-                {% endif %}
-            </div>
+                <span>{{ group.name }}</span>
+            </nav>
+            <h1 class="mc-h1 mb-1">{{ group.name }}</h1>
+            <p class="mc-sub mb-0">
+                {%- if group.set_code %}Set{% else %}Binder{% endif %} ·
+                {{ total_unique }} unique · {{ total_qty }} cards
+                {%- if total_collection_value %} · {{ currency_symbol }}{{ "%.2f"|format(total_collection_value) }}{% endif -%}
+            </p>
         </div>
-        {% if total_collection_value %}
-        <div class="alert alert-success">
-            <h5 class="alert-heading mb-0"><i class="fas fa-dollar-sign"></i> Group Value: {{ currency_symbol }}{{ "%.2f"|format(total_collection_value) }}</h5>
-        </div>
+    </div>
+    <div class="mc-page-actions">
+        {% if not group.set_code and cards %}
+        <a class="mc-btn mc-btn-secondary" href="{{ url_for('make_deck_from_group', group_id=group.id) }}">
+            <i data-lucide="copy" width="15" height="15"></i> Make a deck from this binder
+        </a>
+        {% endif %}
+        <button class="mc-btn mc-btn-secondary" type="button" data-bs-toggle="modal" data-bs-target="#editGroupModal">
+            <i data-lucide="pencil" width="15" height="15"></i> Edit
+        </button>
+        {% if not group.is_default %}
+        <button class="mc-btn mc-btn-secondary mc-btn-icon" type="button" data-bs-toggle="modal" data-bs-target="#deleteGroupModal" aria-label="More actions">
+            <i data-lucide="more-horizontal" width="16" height="16"></i>
+        </button>
         {% endif %}
     </div>
 </div>
 
-{% if collection %}
-<div class="mb-3">
-    <div class="input-group">
-        <span class="input-group-text"><i class="fas fa-search"></i></span>
-        <input type="search" id="cardSearch" class="form-control" placeholder="Filter by card name or type..." oninput="filterCards()" autocomplete="off">
-        <button class="btn btn-outline-secondary" type="button" onclick="document.getElementById('cardSearch').value=''; filterCards();">Clear</button>
+<div class="mc-toolbar">
+    <div class="mc-search">
+        <i data-lucide="search" width="15" height="15"></i>
+        <input type="search" id="cardSearch" placeholder="Filter by name or type…" oninput="filterCards()" autocomplete="off">
     </div>
-    <small class="text-muted"><span id="cardMatchCount">{{ collection|length }}</span> of {{ collection|length }} cards shown</small>
+    <div class="mc-toolbar-right">
+        <div class="mc-seg" role="group" aria-label="Sort cards">
+            {% for key, label in [('collector_number', 'Collector #'), ('color', 'Color'), ('rarity', 'Rarity'), ('price', 'Price')] %}
+            <a class="mc-seg-opt {% if sort_mode == key %}is-active{% endif %}"
+               href="{{ url_for('view_collection_group', group_id=group.id, sort=key, view=view_style) }}">{{ label }}</a>
+            {% endfor %}
+        </div>
+        <div class="mc-seg" role="group" aria-label="View mode">
+            <a class="mc-seg-opt {% if view_style == 'grid' %}is-active{% endif %}"
+               href="{{ url_for('view_collection_group', group_id=group.id, sort=sort_mode, view='grid') }}">
+                <i data-lucide="layout-grid" width="14" height="14"></i> Grid
+            </a>
+            <a class="mc-seg-opt {% if view_style == 'list' %}is-active{% endif %}"
+               href="{{ url_for('view_collection_group', group_id=group.id, sort=sort_mode, view='list') }}">
+                <i data-lucide="list" width="14" height="14"></i> List
+            </a>
+        </div>
+    </div>
 </div>
-<div class="row" id="cardsGrid">
-    {% for card in collection %}
-    <div class="col-md-6 col-lg-4 mb-4 card-tile-wrap" data-card-name="{{ card[1]|lower }}" data-card-type="{{ card[4]|lower }}">
-        <a href="/card/{{ card[0] }}?from=collection&group_id={{ group.id }}" class="card h-100 card-tile text-decoration-none" style="color: inherit;">
-            <div class="card-img-top bg-light d-flex justify-content-center align-items-center" style="min-height: 200px; gap: 0.5rem;">
-                {% set image_data = card[37]|from_json %}
-                {% set faces = card[38]|from_json %}
-                {% set top_src = image_data.normal or image_data.small or '' %}
-                {% if top_src %}
-                <img src="{{ top_src }}" class="card-image" alt="{{ card[1] }}" style="max-height: 200px; object-fit: contain;">
-                {% elif faces and faces|length > 1 %}
-                {# Double-faced card: show both faces next to each other #}
-                {% for face in faces %}
-                {% set face_image = face.image_uris or {} %}
-                {% if face_image.normal or face_image.small %}
-                <img src="{{ face_image.normal or face_image.small }}" class="card-image" alt="{{ face.name or card[1] }}" style="max-height: 200px; max-width: 50%; object-fit: contain;">
-                {% endif %}
-                {% endfor %}
-                {% elif faces and faces[0].image_uris %}
-                <img src="{{ faces[0].image_uris.normal or faces[0].image_uris.small or '' }}" class="card-image" alt="{{ card[1] }}" style="max-height: 200px; object-fit: contain;">
-                {% else %}
-                <i class="fas fa-image fa-3x text-muted"></i>
-                {% endif %}
-            </div>
-            <div class="card-body d-flex flex-column">
-                <h6 class="card-title">{{ card[1] }}</h6>
-                <p class="card-text text-muted small">{{ card[4] }}</p>
-                <div class="mt-auto">
-                    <div class="d-flex justify-content-between align-items-center mb-2">
-                        <span class="badge bg-{% if card[41] %}warning{% else %}primary{% endif %}" id="quantity-badge-{{ card[0] }}-{{ card[41] }}">
-                            {{ card[40] }} {% if card[41] %}foil{% else %}regular{% endif %}
-                        </span>
-                        {% if card[44] %}<span class="badge bg-success">{{ currency_symbol }}{{ "%.2f"|format(card[44]) }}</span>{% endif %}
-                    </div>
-                    {% if card[45] %}
-                    <div class="mb-2"><small class="text-success fw-bold">Total: {{ currency_symbol }}{{ "%.2f"|format(card[45]) }}</small></div>
-                    {% endif %}
-                    <div class="input-group input-group-sm" onclick="event.stopPropagation()">
-                        <button class="btn btn-outline-secondary" type="button" onclick="adjust('{{ card[0] }}', {{ card[41]|lower }}, -1)"><i class="fas fa-minus"></i></button>
-                        <input type="number" class="form-control text-center no-spinner" id="quantity-{{ card[0] }}-{{ card[41] }}" value="{{ card[40] }}" min="0" max="999" style="max-width: 80px;">
-                        <button class="btn btn-outline-secondary" type="button" onclick="adjust('{{ card[0] }}', {{ card[41]|lower }}, 1)"><i class="fas fa-plus"></i></button>
-                        <button class="btn btn-primary btn-sm" type="button" onclick="commitQty('{{ card[0] }}', {{ card[41]|lower }})">Update</button>
-                    </div>
-                </div>
-            </div>
-        </a>
-    </div>
+
+{% if cards %}
+{% if view_style == 'grid' %}
+<div class="mc-grid mc-grid-cards" id="cardsGrid" style="--cols:6;">
+    {% for card in cards %}
+    {% set link_url = url_for('view_card_detail', card_id=card.id, from='collection', group_id=group.id) %}
+    {% set show_steppers = True %}
+    {% include "_card_tile.html" %}
     {% endfor %}
 </div>
 {% else %}
-<div class="alert alert-info text-center">
-    <p class="mb-0">No cards in this group yet.</p>
+<table class="mc-table mt-2" id="cardsList">
+    <thead>
+        <tr>
+            <th style="width:220px;">Card</th>
+            <th>Type</th>
+            <th style="width:130px;">Regular</th>
+            <th style="width:130px;">★ Foil</th>
+            <th class="text-end" style="width:80px;">Price</th>
+            <th class="text-end" style="width:90px;">Value</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for card in cards %}
+        <tr data-filter-name="{{ card.name|lower }} {{ card.type_line|lower }}"
+            data-card-id="{{ card.id }}"
+            data-price-nf="{{ '%.2f'|format(card.price or 0) }}"
+            data-price-f="{{ '%.2f'|format(card.price_foil or 0) }}">
+            <td>
+                <div class="d-flex align-items-center gap-2">
+                    {% set img = (card.image_uris.normal or card.image_uris.small) if card.image_uris else None %}
+                    {% if not img and card.card_faces and card.card_faces[0].image_uris %}
+                        {% set img = card.card_faces[0].image_uris.normal or card.card_faces[0].image_uris.small %}
+                    {% endif %}
+                    {% if img %}
+                    <img src="{{ img }}" alt="" class="mc-img-thumb" style="width:34px;height:47px;">
+                    {% endif %}
+                    <a href="{{ url_for('view_card_detail', card_id=card.id, from='collection', group_id=group.id) }}" class="mc-card-name">{{ card.name }}</a>
+                </div>
+            </td>
+            <td class="mc-muted">{{ card.type_line }}</td>
+            <td>
+                <div class="mc-stepper mc-stepper-inline">
+                    <button type="button" class="mc-step-btn" data-finish="0" data-delta="-1" aria-label="Decrease regular copies">−</button>
+                    <span class="mc-step-qty" id="qty-{{ card.id }}-0" data-finish="0">{{ card.qty_regular }}</span>
+                    <button type="button" class="mc-step-btn" data-finish="0" data-delta="1" aria-label="Increase regular copies">+</button>
+                </div>
+            </td>
+            <td>
+                <div class="mc-stepper mc-stepper-inline">
+                    <button type="button" class="mc-step-btn" data-finish="1" data-delta="-1" aria-label="Decrease foil copies">−</button>
+                    <span class="mc-step-qty" id="qty-{{ card.id }}-1" data-finish="1">{{ card.qty_foil }}</span>
+                    <button type="button" class="mc-step-btn" data-finish="1" data-delta="1" aria-label="Increase foil copies">+</button>
+                </div>
+            </td>
+            <td class="text-end mc-muted">
+                {% if card.price %}{{ currency_symbol }}{{ "%.2f"|format(card.price) }}{% endif %}
+            </td>
+            <td class="text-end" id="value-{{ card.id }}">
+                {% if card.line_total %}{{ currency_symbol }}{{ "%.2f"|format(card.line_total) }}{% endif %}
+            </td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% endif %}
+{% else %}
+<div class="mc-empty">
+    <p class="mb-2">No cards in this binder yet.</p>
+    <button class="mc-btn mc-btn-primary" type="button" data-bs-toggle="modal" data-bs-target="#addCardsModal">
+        <i data-lucide="plus" width="15" height="15"></i> Add cards
+    </button>
 </div>
 {% endif %}
 
+{# Edited state footer: running totals #}
+<div class="mc-foot-stats">
+    <span id="footUnique">{{ "{:,}".format(total_unique) }} unique</span>
+    <span id="footQty">{{ "{:,}".format(total_qty) }} cards</span>
+    <span id="footValue">{% if total_collection_value %}{{ currency_symbol }}{{ "%.2f"|format(total_collection_value) }}{% endif %}</span>
+</div>
+
+{# Edit group modal (rename + image) #}
 <div class="modal fade" id="editGroupModal" tabindex="-1">
   <div class="modal-dialog">
-    <form class="modal-content" method="POST" action="{{ url_for('update_collection_group', group_id=group.id) }}" enctype="multipart/form-data">
-      <div class="modal-header">
-        <h5 class="modal-title">Edit Group</h5>
+    <form class="modal-content rounded-0" method="POST" action="{{ url_for('update_collection_group', group_id=group.id) }}" enctype="multipart/form-data">
+      <div class="modal-header border-0 pb-0">
+        <h5 class="modal-title">Edit group</h5>
         <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
       </div>
       <div class="modal-body">
@@ -134,7 +169,7 @@
             <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#editImgGalleryPane" type="button">Choose from Server</button></li>
             <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#editImgUploadPane" type="button">Upload</button></li>
           </ul>
-          <div class="tab-content border border-top-0 rounded-bottom p-3">
+          <div class="tab-content border border-top-0 p-3">
             <div class="tab-pane fade show active" id="editImgUrlPane">
               <input type="text" name="image_url" id="editImageUrl" class="form-control" value="{{ group.image_url or '' }}" placeholder="https://...">
               <div class="form-text">Leave blank to use the auto-default (set icon for set groups).</div>
@@ -150,78 +185,134 @@
             </div>
           </div>
           <div class="mt-2" id="editImagePreviewWrap" style="{% if not group.image_url %}display:none;{% endif %}">
-            <img id="editImagePreview" src="{{ group.image_url or '' }}" style="max-height:80px;max-width:160px;object-fit:contain;" class="border rounded p-1">
+            <img id="editImagePreview" src="{{ group.image_url or '' }}" style="max-height:80px;max-width:160px;object-fit:contain;" class="border p-1">
           </div>
         </div>
       </div>
-      <div class="modal-footer">
-        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-        <button type="submit" class="btn btn-primary">Save</button>
+      <div class="modal-footer border-0">
+        <button type="button" class="mc-btn mc-btn-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button type="submit" class="mc-btn mc-btn-primary">Save</button>
       </div>
     </form>
   </div>
 </div>
 
-<style>
-.card-tile {
-    transition: transform 0.2s ease-in-out, box-shadow 0.2s ease-in-out;
-}
-
-.card-tile:hover {
-    transform: translateY(-5px);
-    box-shadow: 0 8px 25px rgba(0,0,0,0.15);
-}
-
-/* Hide the native number-input spinner arrows; the +/- buttons control the value */
-input[type=number].no-spinner::-webkit-outer-spin-button,
-input[type=number].no-spinner::-webkit-inner-spin-button {
-    -webkit-appearance: none;
-    margin: 0;
-}
-input[type=number].no-spinner {
-    -moz-appearance: textfield;
-    appearance: textfield;
-}
-</style>
+{# Delete group modal #}
+{% if not group.is_default %}
+<div class="modal fade" id="deleteGroupModal" tabindex="-1">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content rounded-0">
+      <div class="modal-body">
+        <h5 class="mb-2">Delete “{{ group.name }}”?</h5>
+        <p class="mc-muted mb-0">This removes the binder and all its card entries. Cards elsewhere in your collection are not affected.</p>
+      </div>
+      <div class="modal-footer border-0">
+        <button type="button" class="mc-btn mc-btn-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button type="button" class="mc-btn mc-btn-danger" id="confirmDeleteGroup">Delete</button>
+      </div>
+    </div>
+  </div>
+</div>
+{% endif %}
 
 <script>
 initTileImagePicker('edit');
+const GROUP_ID = {{ group.id }};
 
 function filterCards() {
     const q = document.getElementById('cardSearch').value.trim().toLowerCase();
     let shown = 0;
-    document.querySelectorAll('#cardsGrid .card-tile-wrap').forEach(tile => {
-        const match = !q || tile.dataset.cardName.includes(q) || tile.dataset.cardType.includes(q);
-        tile.style.display = match ? '' : 'none';
+    document.querySelectorAll('[data-filter-name]').forEach(function(el) {
+        const match = !q || el.dataset.filterName.includes(q);
+        el.style.display = match ? '' : 'none';
         if (match) shown++;
     });
-    const counter = document.getElementById('cardMatchCount');
-    if (counter) counter.textContent = shown;
 }
-function adjust(cardId, isFoil, delta) {
-    const input = document.getElementById('quantity-' + cardId + '-' + isFoil);
-    const v = (parseInt(input.value) || 0) + delta;
-    input.value = Math.max(0, Math.min(999, v));
-}
-function commitQty(cardId, isFoil) {
-    const input = document.getElementById('quantity-' + cardId + '-' + isFoil);
-    const qty = parseInt(input.value) || 0;
+
+/* Steppers: optimistic +/- on the live group totals, persisted via
+   /update_collection_quantity (group-scoped). */
+function stepQty(cardId, finish, delta) {
+    const qtyEl = document.getElementById('qty-' + cardId + '-' + finish);
+    const oldQty = parseInt(qtyEl.textContent) || 0;
+    const newQty = Math.max(0, oldQty + delta);
+
+    const tile = document.querySelector('[data-card-id="' + cardId + '"]');
+    const priceNf = parseFloat(tile ? tile.dataset.priceNf : 0) || 0;
+    const priceF = parseFloat(tile ? tile.dataset.priceF : 0) || 0;
+
+    function apply(qty) {
+        qtyEl.textContent = qty;
+        const badge = document.getElementById('badge-' + cardId + '-' + finish);
+        if (badge) badge.textContent = qty + '×';
+        if (qty === 0 && finish === 0) { if (badge) badge.style.display = 'none'; }
+        if (qty === 0 && finish === 1 && badge) badge.textContent = '';
+        const t0 = document.getElementById('qty-' + cardId + '-0');
+        const t1 = document.getElementById('qty-' + cardId + '-1');
+        const nf = parseInt(t0 ? t0.textContent : 0) || 0;
+        const f = parseInt(t1 ? t1.textContent : 0) || 0;
+        const total = nf * priceNf + f * priceF;
+        const valueEl = document.getElementById('value-' + cardId);
+        const footValue = document.getElementById('footValue');
+        if (valueEl) valueEl.textContent = total ? '{{ currency_symbol }}' + total.toFixed(2) : '';
+        recalcFoot();
+        if (nf + f === 0) {
+            const wrap = tile || qtyEl.closest('.mc-card-tile, tr');
+            if (wrap) wrap.style.opacity = '0.25';
+        }
+    }
+
+    if (newQty === oldQty) return;
+    apply(newQty);
+
     fetch('/update_collection_quantity', {
         method: 'POST', headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({ card_id: cardId, quantity: qty, is_foil: isFoil, group_id: {{ group.id }} })
+        body: JSON.stringify({ card_id: cardId, quantity: newQty, is_foil: finish, group_id: GROUP_ID })
     }).then(r => r.json()).then(d => {
-        if (!d.success) { alert(d.message); return; }
-        if (qty === 0) location.reload();
-    });
+        if (!d.success) { apply(oldQty); return; }
+        /* Server confirms; keep the optimistic value but resync badge text with real value. */
+    }).catch(() => apply(oldQty));
 }
-function deleteGroup(id) {
-    if (!confirm('Delete this group and all its card entries?')) return;
-    fetch('/collection_groups/' + id + '/delete', { method: 'POST' })
-        .then(r => r.json())
-        .then(d => {
-            if (d.success) (window.spaNavigate || (u => { window.location.href = u; }))('{{ url_for("view_collection") }}');
-            else alert(d.message);
-        });
+
+function recalcFoot() {
+    const rows = document.querySelectorAll('[data-card-id]');
+    let qty = 0, unique = 0, value = 0;
+    rows.forEach(function(tile) {
+        const t0 = document.getElementById('qty-' + tile.dataset.cardId + '-0');
+        const t1 = document.getElementById('qty-' + tile.dataset.cardId + '-1');
+        const nf = parseInt(t0 ? t0.textContent : 0) || 0;
+        const f = parseInt(t1 ? t1.textContent : 0) || 0;
+        if (nf + f > 0) unique++;
+        qty += nf + f;
+        const pNf = parseFloat(tile.dataset.priceNf) || 0;
+        const pF = parseFloat(tile.dataset.priceF) || 0;
+        value += nf * pNf + f * pF;
+    });
+    const elQ = document.getElementById('footQty');
+    const elU = document.getElementById('footUnique');
+    const elV = document.getElementById('footValue');
+    if (elQ) elQ.textContent = qty.toLocaleString() + ' cards';
+    if (elU) elU.textContent = unique.toLocaleString() + ' unique';
+    if (elV) elV.textContent = value ? '{{ currency_symbol }}' + value.toFixed(2) : '';
+}
+
+document.querySelectorAll('.mc-step-btn').forEach(function(btn) {
+    btn.addEventListener('click', function(e) {
+        e.stopPropagation();
+        const row = btn.closest('[data-card-id]');
+        stepQty(row.dataset.cardId, parseInt(btn.dataset.finish), parseInt(btn.dataset.delta));
+    });
+});
+
+const deleteBtn = document.getElementById('confirmDeleteGroup');
+if (deleteBtn) {
+    deleteBtn.addEventListener('click', function() {
+        fetch('/collection_groups/{{ group.id }}/delete', { method: 'POST' })
+            .then(r => r.json())
+            .then(d => {
+                if (d.success) (window.spaNavigate || (u => location.href = u))('{{ url_for("view_collection") }}');
+                else alert(d.message);
+            });
+    });
 }
 </script>
 {% endblock %}

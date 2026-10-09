@@ -3,381 +3,280 @@
 {% block title %}{{ card[1] if card else 'Card Not Found' }} - Magic Collector{% endblock %}
 
 {% block content %}
-<div class="row">
-    <div class="col-12">
-        <div class="d-flex justify-content-between align-items-center mb-4">
-            <div>
-                <h1><i class="fas fa-cards-blank"></i> {{ card[1] if card else 'Card Not Found' }}</h1>
-                {% if set_info %}
-                <p class="text-muted">{{ set_info[2] }} • {{ set_info[4] or 'Unknown Release Date' }}</p>
-                {% endif %}
-            </div>
-            <div>
-                {% if back_url %}
-                <a href="{{ back_url }}" class="btn btn-outline-secondary">
-                    <i class="fas fa-arrow-left"></i> {{ back_label }}
-                </a>
-                {% endif %}
-                <a href="/sets" class="btn btn-outline-primary">
-                    <i class="fas fa-layer-group"></i> All Sets
-                </a>
-            </div>
-        </div>
-    </div>
-</div>
-
-{% if card %}
-<div class="row">
-    <div class="col-md-6">
-        <div class="card">
-            <div class="card-body text-center">
-                
-                {% if card_faces_data %}
-                <!-- Double-sided card: show both faces above each other -->
-                <div class="row">
-                    {% for face in card_faces_data %}
-                    <div class="col-12 mb-3">
-                        <h6 class="mb-2">{{ face.name }}</h6>
-                        {% if face.type_line %}
-                        <p class="text-muted small mb-2">{{ face.type_line }}</p>
-                        {% endif %}
-                        {% if face.image_uris %}
-                        <img src="{{ face.image_uris.large or face.image_uris.normal or '' }}" class="img-fluid" alt="{{ face.name }}" style="max-height: 400px; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.15);">
-                        {% else %}
-                        <div class="bg-light d-flex align-items-center justify-content-center" style="height: 300px; border-radius: 8px;">
-                            <i class="fas fa-image fa-3x text-muted"></i>
-                        </div>
-                        {% endif %}
-                    </div>
-                    {% endfor %}
-                </div>
-                {% elif card[37] %}
-                <!-- Single-sided card with image -->
-                {% set image_data = card[37]|from_json %}
-                <img src="{{ image_data.large or image_data.normal or '' }}" class="img-fluid" alt="{{ card[1] }}" style="max-height: 500px; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.15);">
-                {% else %}
-                <!-- No image available -->
-                <div class="bg-light d-flex align-items-center justify-content-center" style="height: 400px; border-radius: 8px;">
-                    <i class="fas fa-image fa-5x text-muted"></i>
-                </div>
-                {% endif %}
-            </div>
-        </div>
-    </div>
-    
-    <div class="col-md-6">
-        <div class="card">
-            <div class="card-header">
-                <h5><i class="fas fa-info-circle"></i> Card Information</h5>
-            </div>
-            <div class="card-body">
-                <div class="row mb-3">
-                    <div class="col-sm-4"><strong>Name:</strong></div>
-                    <div class="col-sm-8">{{ card[1] }}</div>
-                </div>
-                
-                <div class="row mb-3">
-                    <div class="col-sm-4"><strong>Mana Cost:</strong></div>
-                    <div class="col-sm-8">{{ card[2] or 'None' }}</div>
-                </div>
-                
-                <div class="row mb-3">
-                    <div class="col-sm-4"><strong>Converted Mana Cost:</strong></div>
-                    <div class="col-sm-8">{{ card[3] or '0' }}</div>
-                </div>
-                
-                <div class="row mb-3">
-                    <div class="col-sm-4"><strong>Type:</strong></div>
-                    <div class="col-sm-8">{{ card[4] or 'Unknown' }}</div>
-                </div>
-                
-                <div class="row mb-3">
-                    <div class="col-sm-4"><strong>Rarity:</strong></div>
-                    <div class="col-sm-8">
-                        <span class="badge bg-{% if card[24] == 'mythic' %}danger{% elif card[24] == 'rare' %}warning{% elif card[24] == 'uncommon' %}info{% else %}secondary{% endif %}">
-                            {{ card[24] or 'Unknown' }}
-                        </span>
-                    </div>
-                </div>
-                
-                <div class="row mb-3">
-                    <div class="col-sm-4"><strong>Collector Number:</strong></div>
-                    <div class="col-sm-8">{{ card[23] or 'Unknown' }}</div>
-                </div>
-                
-                {% if card[6] or card[7] %}
-                <div class="row mb-3">
-                    <div class="col-sm-4"><strong>Power/Toughness:</strong></div>
-                    <div class="col-sm-8">{{ card[6] or '' }}{% if card[6] and card[7] %}/{% endif %}{{ card[7] or '' }}</div>
-                </div>
-                {% endif %}
-                
-                {% if card[25] %}
-                <div class="row mb-3">
-                    <div class="col-sm-4"><strong>Artist:</strong></div>
-                    <div class="col-sm-8">{{ card[25] }}</div>
-                </div>
-                {% endif %}
-                
-                <div class="row mb-3">
-                    <div class="col-sm-4"><strong>In Collection:</strong></div>
-                    <div class="col-sm-8" id="collection-badges">
-                        {% if non_foil_qty > 0 or foil_qty > 0 %}
-                            {% if non_foil_qty > 0 %}
-                                <span class="badge bg-primary me-1">{{ non_foil_qty }} regular</span>
-                            {% endif %}
-                            {% if foil_qty > 0 %}
-                                <span class="badge bg-warning me-1">{{ foil_qty }} foil</span>
-                            {% endif %}
-                        {% else %}
-                            <span class="badge bg-secondary">0 owned</span>
-                        {% endif %}
-                    </div>
-                </div>
-            </div>
-        </div>
-        
-        <!-- Collection Management -->
-        <div class="card mt-3">
-            <div class="card-header">
-                <h5><i class="fas fa-plus-circle"></i> Add to Collection</h5>
-            </div>
-            <div class="card-body">
-                <form id="collectionForm">
-                    <div class="row">
-                        <div class="col-md-4">
-                            <label for="quantity" class="form-label">Quantity to Add:</label>
-                            <input type="number" class="form-control" id="quantity" name="quantity" value="1" min="1" max="100">
-                        </div>
-                        <div class="col-md-4 d-flex align-items-end">
-                            <div class="form-check">
-                                <input class="form-check-input" type="checkbox" id="isFoil" name="isFoil">
-                                <label class="form-check-label" for="isFoil">
-                                    <i class="fas fa-star text-warning"></i> Foil
-                                </label>
-                            </div>
-                        </div>
-                        <div class="col-md-4 d-flex align-items-end">
-                            <button type="submit" class="btn btn-primary">
-                                <i class="fas fa-plus"></i> Add to Collection
-                            </button>
-                        </div>
-                    </div>
-                </form>
-                <div id="collectionMessage" class="mt-3"></div>
-            </div>
-        </div>
-        
-        {% if card[5] %}
-        <div class="card mt-3">
-            <div class="card-header">
-                <h5><i class="fas fa-scroll"></i> Oracle Text</h5>
-            </div>
-            <div class="card-body">
-                <p class="card-text">{{ card[5]|replace('\n', '<br>')|safe }}</p>
-            </div>
-        </div>
-        {% endif %}
-        
-        {% if card[10] %}
-        <div class="card mt-3">
-            <div class="card-header">
-                <h5><i class="fas fa-gavel"></i> Legalities</h5>
-            </div>
-            <div class="card-body">
-                {% set legalities = card[10]|from_json %}
-                {% if legalities and legalities is mapping %}
-                <div class="row">
-                    {% for format, status in legalities.items() %}
-                    <div class="col-md-6 mb-2">
-                        <span class="badge bg-{% if status == 'legal' %}success{% elif status == 'banned' %}danger{% elif status == 'restricted' %}warning{% else %}secondary{% endif %}">
-                            {{ format|title }}: {{ status|title }}
-                        </span>
-                    </div>
-                    {% endfor %}
-                </div>
-                {% else %}
-                <p class="text-muted">No legality information available</p>
-                {% endif %}
-            </div>
-        </div>
-        {% endif %}
-        
-        {% if card[34] %}
-        <div class="card mt-3">
-            <div class="card-header">
-                <h5><i class="fas fa-dollar-sign"></i> Pricing</h5>
-            </div>
-            <div class="card-body">
-                {% set prices = card[34]|from_json %}
-                {% if prices and prices is mapping %}
-                <div class="row">
-                    {% if prices.usd %}
-                    <div class="col-md-6 mb-2">
-                        <strong>USD:</strong> ${{ prices.usd }}
-                    </div>
-                    {% endif %}
-                    {% if prices.usd_foil %}
-                    <div class="col-md-6 mb-2">
-                        <strong>USD Foil:</strong> ${{ prices.usd_foil }}
-                    </div>
-                    {% endif %}
-                    {% if prices.eur %}
-                    <div class="col-md-6 mb-2">
-                        <strong>EUR:</strong> €{{ prices.eur }}
-                    </div>
-                    {% endif %}
-                    {% if prices.tix %}
-                    <div class="col-md-6 mb-2">
-                        <strong>MTGO:</strong> {{ prices.tix }} tix
-                    </div>
-                    {% endif %}
-                </div>
-                {% else %}
-                <p class="text-muted">No pricing information available</p>
-                {% endif %}
-            </div>
-        </div>
-        {% endif %}
-    </div>
-</div>
-
-<!-- Other Printings Section -->
-{% if other_printings %}
-<div class="row mt-4">
-    <div class="col-12">
-        <div class="card">
-            <div class="card-header">
-                <h5 class="mb-0">
-                    <i class="fas fa-copy"></i> Other Printings
-                    <span class="badge bg-secondary ms-2">{{ other_printings|length }}</span>
-                </h5>
-            </div>
-            <div class="card-body">
-                <p class="text-muted mb-3">This card appears in {{ other_printings|length }} other set(s):</p>
-                <div class="row">
-                    {% for printing in other_printings %}
-                    <div class="col-md-6 col-lg-4 mb-3">
-                        <div class="card h-100 border">
-                            <a href="/card/{{ printing[0] }}" class="text-decoration-none text-dark">
-                                <div class="card-body p-3">
-                                <div class="d-flex align-items-start">
-                                    <div class="flex-shrink-0 me-3">
-                                        {% set image_uris = printing[4]|from_json if printing[4] else {} %}
-                                        {% if image_uris.normal %}
-                                        <img src="{{ image_uris.normal }}" class="img-fluid" style="width: 60px; height: auto; border-radius: 4px;" alt="{{ printing[1] }}">
-                                        {% else %}
-                                        <div class="bg-light d-flex align-items-center justify-content-center" style="width: 60px; height: 84px; border-radius: 4px;">
-                                            <i class="fas fa-image text-muted"></i>
-                                        </div>
-                                        {% endif %}
-                                    </div>
-                                    <div class="flex-grow-1">
-                                        <h6 class="card-title mb-1">{{ printing[1] }}</h6>
-                                        <p class="card-text small text-muted mb-1">
-                                            <strong>{{ printing[6] }}</strong> ({{ printing[2] }})
-                                        </p>
-                                        <p class="card-text small mb-1">
-                                            <span class="badge bg-{% if printing[5] == 'mythic' %}danger{% elif printing[5] == 'rare' %}warning{% elif printing[5] == 'uncommon' %}info{% else %}secondary{% endif %}">
-                                                {{ printing[5].title() }}
-                                            </span>
-                                            <span class="text-muted ms-1">#{{ printing[3] }}</span>
-                                        </p>
-                                        <p class="card-text small text-muted mb-2">
-                                            Released: {{ printing[7] or 'Unknown' }}
-                                        </p>
-                                        <small class="text-muted">
-                                            <i class="fas fa-mouse-pointer"></i> Click to view details
-                                        </small>
-                                    </div>
-                                </div>
-                                </div>
-                            </a>
-                        </div>
-                    </div>
-                    {% endfor %}
-                </div>
-            </div>
-        </div>
-    </div>
-</div>
-{% endif %}
-
+{% if not card %}
+<div class="mc-empty">Card not found. <a href="{{ url_for('view_collection') }}">Back to collection</a></div>
 {% else %}
-<div class="row">
-    <div class="col-12">
-        <div class="alert alert-warning text-center">
-            <h4><i class="fas fa-exclamation-triangle"></i> Card Not Found</h4>
-            <p>The requested card could not be found in the database.</p>
-            <a href="/sets" class="btn btn-primary">
-                <i class="fas fa-layer-group"></i> Browse Sets
-            </a>
+{% set image_data = card[37]|from_json %}
+{% set top_img = image_data.large or image_data.normal or image_data.small or '' %}
+
+<div class="mc-detail">
+    {# ── Left column: image + prices ─────────────────────────────────── #}
+    <aside class="mc-detail-image">
+        {% if top_img %}
+        <img class="mc-img-card" src="{{ top_img }}" alt="{{ card[1] }}">
+        {% elif card_faces_data and card_faces_data[0].image_uris %}
+        <img class="mc-img-card" src="{{ card_faces_data[0].image_uris.large or card_faces_data[0].image_uris.normal }}" alt="{{ card_faces_data[0].name }}">
+        {% else %}
+        <span class="mc-img-card mc-img-placeholder"></span>
+        {% endif %}
+
+        {% if card_faces_data and card_faces_data|length > 1 %}
+        <div class="mc-face-toggle d-flex gap-2 mt-2">
+            {% for face in card_faces_data %}
+            <img class="mc-img-thumb flex-grow-1" style="width:49%;" src="{{ face.image_uris.normal or face.image_uris.large or top_img }}"
+                 alt="{{ face.name or '' }}" loading="lazy">
+            {% endfor %}
         </div>
-    </div>
+        {% endif %}
+
+        <div class="mc-price-strip mt-3">
+            <div class="mc-price-cell">
+                <span class="mc-label">EUR</span>
+                <span class="mc-price-value">{% if prices_strip.eur %}{{ prices_strip.eur|round(2) }}{% else %}—{% endif %}</span>
+            </div>
+            <div class="mc-price-cell">
+                <span class="mc-label">EUR foil</span>
+                <span class="mc-price-value">{% if prices_strip.eur_foil %}{{ prices_strip.eur_foil|round(2) }}{% else %}—{% endif %}</span>
+            </div>
+            <div class="mc-price-cell">
+                <span class="mc-label">USD</span>
+                <span class="mc-price-value">{% if prices_strip.usd %}{{ prices_strip.usd|round(2) }}{% else %}—{% endif %}</span>
+            </div>
+        </div>
+        <p class="mc-sub mt-2 mb-0">Prices from Scryfall.</p>
+        <a class="mc-btn mc-btn-secondary mc-btn-block mt-2" href="{{ scryfall_uri }}" target="_blank" rel="noopener">
+            <i data-lucide="external-link" width="15" height="15"></i> View on Scryfall
+        </a>
+    </aside>
+
+    {# ── Middle column: identity, text, metadata, printings ──────────── #}
+    <article class="mc-detail-main">
+        {% if back_url %}
+        <a class="mc-back" href="{{ back_url }}">← {{ back_label }}</a>
+        {% endif %}
+        <h1 class="mc-h1 mb-1">{{ card[1] }}</h1>
+        <div class="mc-detail-title-line">
+            {% if card[2] %}<span class="mc-mcost">{{ card[2]|mana_symbols }}</span>{% endif %}
+            <span class="mc-muted">{{ card[4] }}</span>
+            {% if card[6] or card[7] %}<span class="mc-muted">· {{ card[6] }}/{{ card[7] }}</span>{% endif %}
+        </div>
+
+        {% if card[5] %}
+        <div class="mc-oracle-box">{{ card[5]|mana_symbols }}</div>
+        {% endif %}
+
+        <div class="mc-meta-grid">
+            <div class="mc-meta-cell">
+                <span class="mc-label">Set</span>
+                <span class="mc-meta-value d-flex align-items-center gap-1">
+                    {% if set_info and set_info[14] %}<img src="{{ set_info[14] }}" alt="" class="mc-set-icon" width="16" height="16">{% endif %}
+                    {{ set_info[2] if set_info else '' }}
+                </span>
+            </div>
+            <div class="mc-meta-cell">
+                <span class="mc-label">Released</span>
+                <span class="mc-meta-value">{{ (set_info[4] or '')[:10] }}</span>
+            </div>
+            <div class="mc-meta-cell">
+                <span class="mc-label">Rarity</span>
+                <span class="mc-meta-value">{{ card[24] }}</span>
+            </div>
+            <div class="mc-meta-cell">
+                <span class="mc-label">Number</span>
+                <span class="mc-meta-value">{{ card[23] }}</span>
+            </div>
+            <div class="mc-meta-cell">
+                <span class="mc-label">Mana value</span>
+                <span class="mc-meta-value">{{ card[3]|round|int if card[3] is number }}</span>
+            </div>
+            <div class="mc-meta-cell">
+                <span class="mc-label">Artist</span>
+                <span class="mc-meta-value">{{ card[25] }}</span>
+            </div>
+        </div>
+
+        {% if legal_formats or non_legal_formats %}
+        <div class="mt-4">
+            <h3 class="mc-label mb-2">Legal in</h3>
+            <div class="d-flex flex-wrap gap-1">
+                {% for fmt in legal_formats %}
+                <span class="mc-tag">{{ fmt }}</span>
+                {% endfor %}
+                {% if non_legal_formats %}
+                <span class="mc-tag mc-tag-outline" title="{% for f, st in non_legal_formats %}{{ f }}: {{ st }}{% if not loop.last %} · {% endif %}{% endfor %}">
+                    Not legal in {{ non_legal_formats|length }} format{{ 's' if non_legal_formats|length != 1 else '' }}
+                </span>
+                {% endif %}
+            </div>
+        </div>
+        {% endif %}
+
+        {% if other_printings %}
+        <div class="mt-4">
+            <h3 class="mc-h2">Other printings <span class="mc-muted" style="font-weight:400;">({{ other_printings|length }})</span></h3>
+            <table class="mc-table mc-printings">
+                <tbody>
+                    {% for p in other_printings %}
+                    {% set p_img = (p.image_uris.normal or p.image_uris.small) if p.image_uris else None %}
+                    <tr>
+                        <td style="width:30px;padding:4px 8px;">
+                            {% if p_img %}<img src="{{ p_img }}" alt="" class="mc-img-thumb" style="width:24px;height:33px;">{% endif %}
+                        </td>
+                        <td>
+                            <a href="{{ url_for('view_card_detail', card_id=p.id, from='collection') }}" class="fw-medium">{{ p.set_name }}</a>
+                            <span class="mc-muted">{{ p.set_code }} {{ p.collector_number }}</span>
+                        </td>
+                        <td class="mc-muted">{{ p.released_at[:10] }}</td>
+                        <td class="mc-muted">{{ p.rarity }}</td>
+                        <td class="text-end">{% if p.price %}{{ currency_symbol }}{{ "%.2f"|format(p.price) }}{% endif %}</td>
+                        <td class="text-end">
+                            {% if p.owned_total %}
+                            <span class="mc-tag">✓ {{ p.owned_total }}{% if p.foil_qty %} <span class="mc-qty-foil">★{{ p.foil_qty }}</span>{% endif %}</span>
+                            {% else %}
+                            <span class="mc-tag mc-tag-outline">Not owned</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% endif %}
+    </article>
+
+    {# ── Right column: ownership + decks ─────────────────────────────── #}
+    <aside class="mc-detail-side">
+        <div class="mc-side-box">
+            <h3 class="mc-h2">You own <span id="cardOwnedTotal">{{ non_foil_qty + foil_qty }}</span></h3>
+            {% if groups_owned %}
+            <div class="mc-own-groups" id="ownGroups">
+                {% for g in groups_owned %}
+                <div class="mc-own-group" data-group-id="{{ g.group_id }}" data-price-nf="{{ card[34]|from_json }}"
+                     data-price-f="{{ card[34]|from_json }}">
+                    <span class="mc-own-group-name">{{ g.group_name }}</span>
+                    <div class="mc-own-steppers">
+                        <div class="mc-stepper mc-stepper-inline">
+                            <button type="button" class="mc-step-btn" data-finish="0" data-delta="-1">−</button>
+                            <span class="mc-step-qty" id="own-{{ g.group_id }}-0" data-finish="0">{{ g.regular }}</span>
+                            <button type="button" class="mc-step-btn" data-finish="0" data-delta="1">+</button>
+                        </div>
+                        <div class="mc-stepper mc-stepper-inline">
+                            <button type="button" class="mc-step-btn" data-finish="1" data-delta="-1">−</button>
+                            <span class="mc-step-qty" id="own-{{ g.group_id }}-1" data-finish="1">{{ g.foil }}</span>
+                            <button type="button" class="mc-step-btn" data-finish="1" data-delta="1">+</button>
+                        </div>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+            {% else %}
+            <p class="mc-muted small">You don't own this printing yet.</p>
+            {% endif %}
+
+            {% if add_groups %}
+            <div class="mc-add-to mt-3 mc-hair-t pt-3">
+                <span class="mc-label d-block mb-2">Add a copy</span>
+                <div class="d-flex gap-2">
+                    <select id="addToGroup" class="mc-select" style="flex:1;">
+                        {% for g in add_groups %}
+                        <option value="{{ g.id }}" {% if request.args.get('group_id') == g.id|string %}selected{% endif %}>{{ g.name }}</option>
+                        {% endfor %}
+                    </select>
+                    <select id="addToFinish" class="mc-select" style="width:90px;">
+                        <option value="0">Regular</option>
+                        <option value="1">★ Foil</option>
+                    </select>
+                </div>
+                <button class="mc-btn mc-btn-primary mc-btn-block mt-2" id="addCopyBtn" type="button">
+                    <i data-lucide="plus" width="15" height="15"></i> Add
+                </button>
+            </div>
+            {% endif %}
+        </div>
+
+        <div class="mc-side-box">
+            <h3 class="mc-h2">Used in {{ decks_used|length }} deck{{ 's' if decks_used|length != 1 else '' }}</h3>
+            {% if decks_used %}
+            <ul class="mc-deck-uses">
+                {% for d in decks_used %}
+                <li>
+                    <a href="{{ url_for('deck_view', deck_id=d.id) }}" class="fw-medium">{{ d.name }}</a>
+                    <span class="mc-muted small">
+                        {{ d.main }} main{% if d.side %} · {{ d.side }} side{% endif %}
+                        · {{ 'owned' if not d.shares else 'shares your copy' }}
+                    </span>
+                </li>
+                {% endfor %}
+            </ul>
+            {% else %}
+            <p class="mc-muted small">Not used in any deck.</p>
+            {% endif %}
+            <div class="d-flex gap-2 mt-2">
+                <a class="mc-btn mc-btn-secondary" style="flex:1;" href="{{ url_for('decks') }}">
+                    <i data-lucide="copy" width="15" height="15"></i> Add to deck
+                </a>
+            </div>
+        </div>
+    </aside>
 </div>
-{% endif %}
 
 <script>
-document.getElementById('collectionForm').addEventListener('submit', function(e) {
-    e.preventDefault();
-    
-    const quantity = document.getElementById('quantity').value;
-    const isFoil = document.getElementById('isFoil').checked;
-    const cardId = '{{ card[0] if card else "" }}';
-    const messageDiv = document.getElementById('collectionMessage');
-    
-    if (!cardId) {
-        messageDiv.innerHTML = '<div class="alert alert-danger">Card ID not found</div>';
-        return;
-    }
-    
-    fetch('/add_to_collection', {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-            card_id: cardId,
-            quantity: parseInt(quantity),
-            is_foil: isFoil
-        })
-    })
-    .then(response => response.json())
-    .then(data => {
-        if (data.success) {
-            messageDiv.innerHTML = '<div class="alert alert-success">' + data.message + '</div>';
-            // Update the collection badges
-            updateCollectionBadges(data.non_foil_qty, data.foil_qty);
-            // Reset form
-            document.getElementById('quantity').value = '1';
-            document.getElementById('isFoil').checked = false;
-        } else {
-            messageDiv.innerHTML = '<div class="alert alert-danger">' + data.message + '</div>';
-        }
-    })
-    .catch(error => {
-        messageDiv.innerHTML = '<div class="alert alert-danger">Error: ' + error.message + '</div>';
+const CARD_ID = '{{ card[0] }}';
+
+function cardStepQty(groupId, finish, delta) {
+    const qtyEl = document.getElementById('own-' + groupId + '-' + finish);
+    const oldQty = parseInt(qtyEl.textContent) || 0;
+    const newQty = Math.max(0, oldQty + delta);
+    if (newQty === oldQty) return;
+    qtyEl.textContent = newQty;
+    updateOwnedTotal();
+    fetch('/update_collection_quantity', {
+        method: 'POST', headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ card_id: CARD_ID, quantity: newQty, is_foil: finish, group_id: groupId })
+    }).then(r => r.json()).then(d => {
+        if (!d.success) { qtyEl.textContent = oldQty; updateOwnedTotal(); }
+    }).catch(() => { qtyEl.textContent = oldQty; updateOwnedTotal(); });
+}
+
+function updateOwnedTotal() {
+    const total = document.getElementById('cardOwnedTotal');
+    if (!total) return;
+    let sum = 0;
+    document.querySelectorAll('.mc-own-group').forEach(function(row) {
+        const rowId = row.dataset.groupId;
+        sum += (parseInt(document.getElementById('own-' + rowId + '-0').textContent) || 0)
+             + (parseInt(document.getElementById('own-' + rowId + '-1').textContent) || 0);
+    });
+    total.textContent = sum;
+}
+
+document.querySelectorAll('#ownGroups .mc-step-btn').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+        const row = btn.closest('.mc-own-group');
+        cardStepQty(row.dataset.groupId, parseInt(btn.dataset.finish), parseInt(btn.dataset.delta));
     });
 });
 
-function updateCollectionBadges(nonFoilQty, foilQty) {
-    const collectionDiv = document.getElementById('collection-badges');
-    if (!collectionDiv) return;
-    
-    let badgeHtml = '';
-    if (nonFoilQty > 0 || foilQty > 0) {
-        if (nonFoilQty > 0) {
-            badgeHtml += '<span class="badge bg-primary me-1">' + nonFoilQty + ' regular</span>';
-        }
-        if (foilQty > 0) {
-            badgeHtml += '<span class="badge bg-warning me-1">' + foilQty + ' foil</span>';
-        }
-    } else {
-        badgeHtml = '<span class="badge bg-secondary">0 owned</span>';
-    }
-    
-    collectionDiv.innerHTML = badgeHtml;
+const addCopyBtn = document.getElementById('addCopyBtn');
+if (addCopyBtn) {
+    addCopyBtn.addEventListener('click', function() {
+        const groupId = document.getElementById('addToGroup').value;
+        const finish = parseInt(document.getElementById('addToFinish').value);
+        const qtyEl = document.getElementById('own-' + groupId + '-' + finish);
+        const current = qtyEl ? (parseInt(qtyEl.textContent) || 0) : 0;
+        const target = current + 1;
+        fetch('/update_collection_quantity', {
+            method: 'POST', headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ card_id: CARD_ID, quantity: target, is_foil: finish, group_id: groupId })
+        }).then(r => r.json()).then(d => {
+            if (d.success) {
+                window.location.reload();
+            } else {
+                alert(d.message);
+            }
+        });
+    });
 }
-
 </script>
+{% endif %}
 {% endblock %}
