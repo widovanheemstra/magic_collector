@@ -315,8 +315,9 @@ h1, h2, h3, h4, h5, h6, .navbar-brand {
 
 /* SVG set icons loaded via <img>.
    Chain: collapse to black → invert to white → sepia → hue-rotate to 194° → saturate → brightness
-   Result closely matches --forge-frost (#9fdcef, HSL 194° 71% 78%). */
-.group-card .card-img-top img {
+   Result closely matches --forge-frost (#9fdcef, HSL 194° 71% 78%).
+   Skipped for .local-group-image — user-picked/uploaded tile images should keep their own colors. */
+.group-card .card-img-top img:not(.local-group-image) {
     filter:
         brightness(0)
         invert(1)

@@ -33,7 +33,7 @@
         {% if total_collection_value %}
         <div class="alert alert-success">
             <h4 class="alert-heading"><i class="fas fa-dollar-sign"></i> Total Collection Value</h4>
-            <h2 class="mb-0">${{ "%.2f"|format(total_collection_value) }}</h2>
+            <h2 class="mb-0">{{ currency_symbol }}{{ "%.2f"|format(total_collection_value) }}</h2>
         </div>
         {% endif %}
     </div>
@@ -45,7 +45,9 @@
         <a href="/collection/{{ g.id }}" class="card h-100 group-card text-decoration-none" style="color: inherit;">
             <div class="card-img-top bg-light d-flex justify-content-center align-items-center" style="min-height: 160px; padding: 1rem;">
                 {% if g.image_url %}
-                <img src="{{ g.image_url }}" alt="{{ g.name }}" style="max-height: 140px; max-width: 100%; object-fit: contain;">
+                <img src="{{ g.image_url }}" alt="{{ g.name }}"
+                     class="{{ 'local-group-image' if g.image_url.startswith('/static/group_gallery/') or g.image_url.startswith('/static/group_images/') else '' }}"
+                     style="max-height: 140px; max-width: 100%; object-fit: contain;">
                 {% else %}
                 <i class="fas fa-folder-open fa-4x text-muted"></i>
                 {% endif %}
@@ -59,7 +61,7 @@
                 <div class="mt-auto">
                     <div class="d-flex justify-content-between small text-muted">
                         <span>{{ g.row_count }} distinct · {{ g.total_qty }} total</span>
-                        {% if g.value %}<span class="text-success">${{ "%.2f"|format(g.value) }}</span>{% endif %}
+                        {% if g.value %}<span class="text-success">{{ currency_symbol }}{{ "%.2f"|format(g.value) }}</span>{% endif %}
                     </div>
                 </div>
             </div>
@@ -78,7 +80,7 @@
 
 <div class="modal fade" id="newGroupModal" tabindex="-1">
   <div class="modal-dialog">
-    <form class="modal-content" method="POST" action="{{ url_for('create_collection_group') }}">
+    <form class="modal-content" method="POST" action="{{ url_for('create_collection_group') }}" enctype="multipart/form-data">
       <div class="modal-header">
         <h5 class="modal-title">New Custom Group</h5>
         <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
@@ -89,9 +91,30 @@
           <input type="text" name="name" class="form-control" required>
         </div>
         <div class="mb-3">
-          <label class="form-label">Image URL (optional)</label>
-          <input type="url" name="image_url" class="form-control" placeholder="https://...">
-          <div class="form-text">If left blank, the group will use a default icon until you add cards.</div>
+          <label class="form-label">Image (optional)</label>
+          <ul class="nav nav-tabs nav-fill" role="tablist">
+            <li class="nav-item"><button class="nav-link active" data-bs-toggle="tab" data-bs-target="#newImgUrlPane" type="button">URL</button></li>
+            <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#newImgGalleryPane" type="button">Choose from Server</button></li>
+            <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#newImgUploadPane" type="button">Upload</button></li>
+          </ul>
+          <div class="tab-content border border-top-0 rounded-bottom p-3">
+            <div class="tab-pane fade show active" id="newImgUrlPane">
+              <input type="text" name="image_url" id="newImageUrl" class="form-control" placeholder="https://...">
+              <div class="form-text">If left blank, the group will use a default icon until you add cards.</div>
+            </div>
+            <div class="tab-pane fade" id="newImgGalleryPane">
+              <div id="newImageGallery" class="d-flex flex-wrap gap-2 group-gallery-grid">
+                <p class="text-muted small mb-0">Loading…</p>
+              </div>
+            </div>
+            <div class="tab-pane fade" id="newImgUploadPane">
+              <input type="file" name="image_file" id="newImageFile" class="form-control" accept=".jpg,.jpeg,.png,.gif,.webp,.svg">
+              <div class="form-text">Accepted formats: JPG, GIF, WEBP, PNG, SVG.</div>
+            </div>
+          </div>
+          <div class="mt-2" id="newImagePreviewWrap" style="display:none;">
+            <img id="newImagePreview" style="max-height:80px;max-width:160px;object-fit:contain;" class="border rounded p-1">
+          </div>
         </div>
       </div>
       <div class="modal-footer">
@@ -114,6 +137,8 @@
 </style>
 
 <script>
+initTileImagePicker('new');
+
 function filterGroups() {
     const q = document.getElementById('groupSearch').value.trim().toLowerCase();
     let shown = 0;
