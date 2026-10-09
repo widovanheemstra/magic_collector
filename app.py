@@ -2153,8 +2153,22 @@ def delete_collection_group(group_id):
 
 @app.route('/settings')
 def view_settings():
-    """Settings page"""
-    return render_template('settings.html')
+    """Settings page: appearance, currency and data management."""
+    conn = sqlite3.connect(DATABASE)
+    cursor = conn.cursor()
+    try:
+        stats = {
+            'total_cards': cursor.execute('SELECT COUNT(*) FROM cards').fetchone()[0],
+            'total_sets': cursor.execute('SELECT COUNT(*) FROM sets').fetchone()[0],
+            'collection_cards': cursor.execute(
+                'SELECT COALESCE(SUM(quantity), 0) FROM user_collection').fetchone()[0],
+            'total_decks': cursor.execute('SELECT COUNT(*) FROM decks').fetchone()[0],
+        }
+    finally:
+        conn.close()
+    return render_template('settings.html', stats=stats,
+                           current_theme=get_theme(),
+                           current_currency=get_currency())
 
 @app.route('/theme-demo')
 def view_theme_demo():
