@@ -1,6 +1,4 @@
-# CLAUDE.md
-
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+# AGENTS.md
 
 ## Commands
 
@@ -32,11 +30,10 @@ This is a single-file Flask monolith (`app.py`, ~1700 lines) backed by a local S
 **Key tables.**
 - `sets`, `cards` — Scryfall mirror. Complex fields (`prices`, `legalities`, `image_uris`, `card_faces`) are stored as JSON strings; templates decode them with the `from_json` Jinja filter registered in `app.py`.
 - `user_collection` — quantities keyed by `(card_id, is_foil)`. Helpers: `get_collection_quantity`, `get_collection_totals`, `add_to_collection`, `update_collection_quantity`.
-- `trade_data` — buy/sell ledger. **The trading routes (`/add_trade`, `/delete_trade`) mutate `user_collection` as a side effect** (buy adds, sell removes, delete rolls back). Any change to trading logic must keep collection state consistent.
 - `decks`, `deck_cards` — deck lists with a `sideboard` flag. Deck routes validate card names against the `cards` table via `validate_cards_in_database()` and parse pasted decklists via `parse_decklist_text()`.
 - `card_legalities_history`, `card_prices_history` — append-only history written by `save_legalities_history` / `save_prices_history` on every card store.
 
-**Pricing.** `get_card_price(card_data, is_foil)` is the single source of truth for resolving a price from a card's JSON `prices` blob (handles foil/non-foil fallback). Collection value calculations and trade profit all funnel through it.
+**Pricing.** `get_card_price(card_data, is_foil)` is the single source of truth for resolving a price from a card's JSON `prices` blob (handles foil/non-foil fallback). Collection value calculations funnel through it.
 
 **Collection sorting.** `view_collection_group()` (route `/collection/<group_id>`) accepts a `?sort=` query parameter with values `collector_number` (default), `color`, or `rarity`. The `sort_collection()` helper and `parse_mana_cost()` helper in `app.py` handle the sorting logic. Color sort groups cards by MTG color (single-color → multi-color → colorless), then by rarity within each group, then by collector number. Rarity sort orders common → uncommon → rare → mythic. The `group_detail.html` template renders three toggle buttons (Collector, Color, Rarity) in the header bar.
 
@@ -51,3 +48,17 @@ This is a single-file Flask monolith (`app.py`, ~1700 lines) backed by a local S
 - Schema changes belong in `init_db()`. There are no migrations — additive `ALTER TABLE` patterns inside `init_db()` (wrapped in try/except for "already exists") are the convention.
 - When adding routes that read/write the collection, reuse the `*_collection*` helpers rather than issuing raw SQL — they handle the foil/non-foil split and timestamps.
 - `requirements.txt` is the authoritative dep list; `pyproject.toml` exists for `uv` but its `dependencies = []` is empty and not used.
+
+## Agent skills
+
+### Issue tracker
+
+Issues for this repo live as GitHub issues, managed via the `gh` CLI. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+The five canonical triage roles map to default labels (`needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`). See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context layout — one root `GLOSSARY.md` and `docs/adr/`. See `docs/agents/domain.md`.

@@ -1,6 +1,6 @@
 # Magic: The Gathering Collector
 
-A comprehensive Python web application for collecting, managing, and trading Magic: The Gathering cards using the Scryfall API. This application provides a complete solution for Magic: The Gathering enthusiasts to organize their collection, track trades, build decks, and explore card data.
+A comprehensive Python web application for collecting and managing Magic: The Gathering cards using the Scryfall API. This application provides a complete solution for Magic: The Gathering enthusiasts to organize their collection, build decks, and explore card data.
 
 ## Features
 
@@ -8,7 +8,6 @@ A comprehensive Python web application for collecting, managing, and trading Mag
 - **Sets Management**: Browse all available Magic: The Gathering sets with details like release dates, card counts, and set types
 - **Card Database**: View cards from specific sets with images, mana costs, types, oracle text, and comprehensive card details
 - **Collection Management**: Track your personal card collection with foil/non-foil quantities and collection value
-- **Trading System**: Record buy/sell transactions with profit tracking and automatic collection updates
 - **Deck Building**: Create and manage Magic decks with main deck and sideboard support
 - **Advanced Search**: Search through cards by name, type, oracle text, and other attributes
 - **Data Storage**: All data is stored locally in a SQLite database for offline access
@@ -21,14 +20,6 @@ A comprehensive Python web application for collecting, managing, and trading Mag
 - View collection value based on current market prices
 - Update card prices and legalities from Scryfall API
 - Collection statistics and overview
-
-### Trading Features
-- Record buy and sell transactions
-- Automatic collection management (buy adds to collection, sell removes from collection)
-- Profit/loss tracking per transaction
-- Trade history with pagination
-- Custom trade dates
-- Trade deletion with collection rollback
 
 ### Deck Building Features
 - Create and manage multiple decks
@@ -134,21 +125,16 @@ If no `.env` file is present, the application will use the default values.
    - View your collection with current values
    - Update card prices and legalities
 
-6. **Track Trades**:
-   - Record buy/sell transactions
-   - View trade history and profit/loss
-   - Automatic collection management
-
-7. **Build Decks**:
+6. **Build Decks**:
    - Create and manage multiple decks
    - Add main deck and sideboard cards
    - Check collection quantities for deck cards
 
-8. **Search Cards**:
+7. **Search Cards**:
    - Use the search functionality to find specific cards
    - Search by name, type, or oracle text
 
-9. **Elasticsearch Integration** (Optional):
+8. **Elasticsearch Integration** (Optional):
    - Create Elasticsearch index for advanced search capabilities
    - Load all cards from bulk data into Elasticsearch
    - See "ELK Integration" section below for details
@@ -162,7 +148,6 @@ If no `.env` file is present, the application will use the default values.
 - `/card/<card_id>` - View detailed information for a specific card
 - `/collection` - View and manage your personal card collection
 - `/search` - Search cards by name, type, or oracle text
-- `/trades` - View and manage trading history
 - `/decks` - View and manage your decks
 - `/deck/<deck_id>` - View individual deck details
 - `/deck/new` - Create a new deck
@@ -180,11 +165,6 @@ If no `.env` file is present, the application will use the default values.
 - `/clear_collection` (POST) - Clear all cards from collection
 - `/update_collection_prices` (POST) - Update prices and legalities for all collection cards
 
-### Trading System
-- `/add_trade` (POST) - Add a new trade transaction
-- `/delete_trade` (POST) - Delete a trade and manage collection accordingly
-- `/delete_all_trades` (POST) - Delete all trades from database
-
 ### Deck Management
 - `/add_deck` (POST) - Add a new deck
 - `/update_deck` (POST) - Create or update a deck with validation
@@ -194,7 +174,6 @@ If no `.env` file is present, the application will use the default values.
 ### API Data Endpoints
 - `/get_sets` - Get all sets for dropdown menus
 - `/get_set_info/<set_code>` - Get set information including max collector number
-- `/get_card_info/<set_code>/<collector_number>` - Get card information for trade forms
 - `/get_database_stats` - Get comprehensive database statistics
 
 ## Database Schema
@@ -209,9 +188,6 @@ The application uses SQLite with the following tables:
 - **user_collection**: Tracks personal card collection (card_id, quantity, foil status, timestamps)
 - **card_legalities_history**: Historical tracking of card legalities across formats
 - **card_prices_history**: Historical tracking of card prices over time
-
-### Trading System
-- **trade_data**: Records buy/sell transactions (set_code, collector_number, direction, quantity, price, profit, etc.)
 
 ### Deck Building
 - **decks**: Stores deck information (name, description, format, timestamps)
@@ -379,16 +355,6 @@ The Elasticsearch index includes:
 - Add/remove cards with quantity controls
 - Collection statistics and overview
 - Price history tracking
-- Automatic collection updates from trades
-
-### Trading System
-- Record buy/sell transactions with full details
-- Automatic collection management
-- Profit/loss calculation per trade
-- Custom trade dates
-- Trade history with pagination
-- Trade deletion with collection rollback
-- Support for both foil and non-foil trades
 
 ### Deck Building
 - Create unlimited decks with descriptions
@@ -405,11 +371,9 @@ The Elasticsearch index includes:
 - Data is cached locally in SQLite for faster access and offline use
 - Card images are displayed when available from the API
 - The application handles pagination for large sets automatically
-- Collection management is fully integrated with trading system
 - Deck building includes validation against your card database
 - Historical data tracking for prices and legalities
 - Support for double-sided cards and complex card types
-- Automatic collection updates when recording trades
 - Real-time collection value calculation based on current market prices
 - **Elasticsearch Integration**: Optional but recommended for advanced search capabilities and analytics
 - Bulk data loading scripts allow you to index all MTG cards for full-text search and complex queries
