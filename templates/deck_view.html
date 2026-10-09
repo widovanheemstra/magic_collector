@@ -3,35 +3,42 @@
 {% block title %}{{ deck.name }} - Magic Collector{% endblock %}
 
 {% block content %}
-<div class="mc-page-head">
-    <div class="d-flex align-items-center gap-3">
-        {% if deck.image_url %}
-        <img class="mc-head-cover" src="{{ deck.image_url }}" alt="">
-        {% endif %}
-        <div>
-            <nav class="mc-breadcrumb">
-                <a href="{{ url_for('decks') }}">Decks</a>
-                <span>/</span>
-                <span>{{ deck.name }}</span>
-            </nav>
-            <h1 class="mc-h1 mb-1">{{ deck.name }}</h1>
-            <p class="mc-sub mb-0">
-                {{ deck.main_total }} main{% if deck.side_total %} · {{ deck.side_total }} side{% endif %}
-                {% if deck.format %} · {{ deck.format }}{% endif %}
-                {% if deck.value %} · {{ currency_symbol }}{{ "%.2f"|format(deck.value) }}{% endif %}
-            </p>
+<div class="mc-db-head">
+    <div class="mc-db-head-info">
+        <nav class="mc-breadcrumb">
+            <a href="{{ url_for('decks') }}">Decks</a>
+            <span>/</span>
+            <span>{{ deck.name }}</span>
+        </nav>
+        <div class="mc-db-title-row">
+            <h1 class="mc-db-title">{{ deck.name }}</h1>
+            {% for letter in deck.colors %}
+            <img class="mc-mana mc-mana-sm" src="https://svgs.scryfall.io/card-symbols/{{ letter }}.svg"
+                 alt="{{ letter }}" width="15" height="15">
+            {% endfor %}
+            <span class="mc-db-meta">
+                {%- if deck.format %}{{ deck.format }} · {% endif %}{{ deck.total_cards }} cards
+                {%- if deck.value %} · {{ currency_symbol }}{{ "%.2f"|format(deck.value) }}{% endif -%}
+            </span>
         </div>
     </div>
-    <div class="mc-page-actions">
-        <button class="mc-btn mc-btn-secondary" type="button" data-bs-toggle="modal" data-bs-target="#editDeckModal">
-            <i data-lucide="pencil" width="15" height="15"></i> Edit
+    <div class="mc-db-head-actions">
+        <span class="mc-db-saved">Saved</span>
+        <button class="mc-btn mc-btn-secondary" type="button" id="exportListBtn">
+            <i data-lucide="download" width="14" height="14"></i> Export list
         </button>
-        <button class="mc-btn mc-btn-secondary" type="button" id="addToCollectionBtn">
-            <i data-lucide="plus" width="15" height="15"></i> Add to collection
-        </button>
-        <button class="mc-btn mc-btn-secondary mc-btn-icon" type="button" data-bs-toggle="modal" data-bs-target="#deleteDeckModal" aria-label="Delete deck">
-            <i data-lucide="trash-2" width="16" height="16"></i>
-        </button>
+        <div class="dropdown mc-db-menu">
+            <button class="mc-btn mc-btn-secondary mc-btn-icon" type="button" data-bs-toggle="dropdown"
+                    aria-label="Deck menu" aria-expanded="false">⋯</button>
+            <div class="dropdown-menu dropdown-menu-end rounded-0 border-0 shadow">
+                <button class="dropdown-item" type="button" data-bs-toggle="modal" data-bs-target="#editDeckModal">Edit deck</button>
+                <button class="dropdown-item" type="button" data-bs-toggle="modal" data-bs-target="#pasteListModal">Paste list</button>
+                <button class="dropdown-item" type="button" id="addToCollectionItem">Add deck to collection</button>
+                <div class="dropdown-divider"></div>
+                <button class="dropdown-item" type="button" data-bs-toggle="modal" data-bs-target="#emptyDeckModal">Empty deck</button>
+                <button class="dropdown-item text-danger" type="button" data-bs-toggle="modal" data-bs-target="#deleteDeckModal">Delete deck</button>
+            </div>
+        </div>
     </div>
 </div>
 
@@ -41,156 +48,159 @@
 </div>
 {% endif %}
 
-<div class="mc-toolbar">
-    <div class="mc-quick-add">
+<div class="mc-db-body">
+    {# ── Left: add cards ─────────────────────────────────────────────── #}
+    <aside class="mc-db-add" aria-label="Add cards">
         <div class="mc-search">
             <i data-lucide="search" width="15" height="15"></i>
-            <input type="search" id="deckQuickAdd" placeholder="Add a card by name…" autocomplete="off" list="deckCardList">
+            <input type="search" id="deckAddSearch" placeholder="Add card by name or type…"
+                   autocomplete="off" list="deckCardList" spellcheck="false"
+                   aria-label="Search cards to add">
             <datalist id="deckCardList"></datalist>
         </div>
-        <button class="mc-btn mc-btn-primary" type="button" id="quickAddBtn">
-            <i data-lucide="plus" width="15" height="15"></i> Add
-        </button>
-    </div>
-    <div class="mc-toolbar-right">
-        <button class="mc-btn mc-btn-secondary" type="button" data-bs-toggle="modal" data-bs-target="#pasteListModal">
-            <i data-lucide="clipboard-paste" width="15" height="15"></i> Paste list
-        </button>
-    </div>
-</div>
-
-<div class="mc-builder">
-    <section class="mc-builder-col">
-        <h2 class="mc-h2">Main deck <span class="mc-muted" id="mainCount">{{ deck.main_total }} cards</span></h2>
-        {% if deck.main_cards %}
-        <div class="mc-table-scroll">
-        <table class="mc-table mc-deck-table">
-            <tbody id="mainTableBody">
-                {% for c in deck.main_cards %}
-                <tr class="deck-row{% if c.missing %} is-missing{% endif %}" data-name="{{ c.name }}"
-                    data-side="0" data-qty="{{ c.quantity }}" data-price="{{ '%.2f'|format(c.price or 0) }}">
-                    <td class="mc-row-qty">
-                        <div class="mc-stepper mc-stepper-inline">
-                            <button type="button" class="mc-step-btn" data-delta="-1" aria-label="Decrease">−</button>
-                            <span class="mc-step-qty">{{ c.quantity }}</span>
-                            <button type="button" class="mc-step-btn" data-delta="1" aria-label="Increase">+</button>
-                        </div>
-                    </td>
-                    <td>
-                        <div class="d-flex align-items-center gap-2">
-                            {% if c.image %}
-                            <img src="{{ c.image }}" alt="" class="mc-img-thumb mc-img-thumb-sm"
-                             {% if c.image %}data-preview-src="{{ c.image }}"
-                             data-preview-name="{{ c.name }}"
-                             data-preview-type="{{ c.type_line }}"
-                             data-preview-price="{{ (currency_symbol ~ '%.2f'|format(c.price)) if c.price else '' }}"{% endif %}>
-                            {% endif %}
-                            <div class="mc-row-name">
-                                <span class="mc-card-name">{{ c.name }}</span>
-                                <span class="mc-muted small d-block">{{ c.type_line }}</span>
-                            </div>
-                        </div>
-                    </td>
-                    <td class="text-end mc-muted mc-row-price">
-                        {% if c.price %}{{ currency_symbol }}{{ "%.2f"|format(c.price) }}{% endif %}
-                    </td>
-                    <td class="mc-row-owned">
-                        {% if c.missing %}<span class="mc-tag mc-tag-danger">Not found</span>
-                        {% elif c.fully_owned %}<span class="mc-tag mc-tag-ok">Owned</span>
-                        {% elif c.in_collection %}<span class="mc-tag mc-tag-outline">Have {{ c.in_collection }}</span>
-                        {% else %}<span class="mc-tag mc-tag-outline">Missing</span>{% endif %}
-                    </td>
-                    <td class="mc-row-actions">
-                        <button type="button" class="mc-icobtn" data-action="move" title="Move to sideboard">
-                            <i data-lucide="arrow-right-left" width="14" height="14"></i>
-                        </button>
-                        <button type="button" class="mc-icobtn" data-action="remove" title="Remove">
-                            <i data-lucide="x" width="14" height="14"></i>
-                        </button>
-                    </td>
-                </tr>
-                {% endfor %}
-            </tbody>
-        </table>
+        <div class="mc-seg" role="group" aria-label="Search scope">
+            <button type="button" class="mc-seg-opt is-active" data-scope="owned_first">Owned first</button>
+            <button type="button" class="mc-seg-opt" data-scope="owned_only">Owned only</button>
+            <button type="button" class="mc-seg-opt" data-scope="all">All</button>
         </div>
-        {% else %}
-        <p class="mc-muted small">No cards in the main deck yet. Search above to add one.</p>
-        {% endif %}
-    </section>
+        <div class="mc-db-results" id="deckAddResults"></div>
+        <p class="mc-db-add-hint">Or paste a list into the deck to add many at once.</p>
+    </aside>
 
-    <section class="mc-builder-col">
-        <h2 class="mc-h2">Sideboard <span class="mc-muted" id="sideCount">{{ deck.side_total }} cards</span></h2>
-        {% if deck.side_cards %}
-        <div class="mc-table-scroll">
-        <table class="mc-table mc-deck-table">
-            <tbody id="sideTableBody">
-                {% for c in deck.side_cards %}
-                <tr class="deck-row{% if c.missing %} is-missing{% endif %}" data-name="{{ c.name }}"
-                    data-side="1" data-qty="{{ c.quantity }}" data-price="{{ '%.2f'|format(c.price or 0) }}">
-                    <td class="mc-row-qty">
-                        <div class="mc-stepper mc-stepper-inline">
-                            <button type="button" class="mc-step-btn" data-delta="-1" aria-label="Decrease">−</button>
-                            <span class="mc-step-qty">{{ c.quantity }}</span>
-                            <button type="button" class="mc-step-btn" data-delta="1" aria-label="Increase">+</button>
-                        </div>
-                    </td>
-                    <td>
-                        <div class="d-flex align-items-center gap-2">
-                            {% if c.image %}
-                            <img src="{{ c.image }}" alt="" class="mc-img-thumb mc-img-thumb-sm"
-                             {% if c.image %}data-preview-src="{{ c.image }}"
-                             data-preview-name="{{ c.name }}"
-                             data-preview-type="{{ c.type_line }}"
-                             data-preview-price="{{ (currency_symbol ~ '%.2f'|format(c.price)) if c.price else '' }}"{% endif %}>
-                            {% endif %}
-                            <div class="mc-row-name">
-                                <span class="mc-card-name">{{ c.name }}</span>
-                                <span class="mc-muted small d-block">{{ c.type_line }}</span>
-                            </div>
-                        </div>
-                    </td>
-                    <td class="text-end mc-muted mc-row-price">
-                        {% if c.price %}{{ currency_symbol }}{{ "%.2f"|format(c.price) }}{% endif %}
-                    </td>
-                    <td class="mc-row-owned">
-                        {% if c.missing %}<span class="mc-tag mc-tag-danger">Not found</span>
-                        {% elif c.fully_owned %}<span class="mc-tag mc-tag-ok">Owned</span>
-                        {% elif c.in_collection %}<span class="mc-tag mc-tag-outline">Have {{ c.in_collection }}</span>
-                        {% else %}<span class="mc-tag mc-tag-outline">Missing</span>{% endif %}
-                    </td>
-                    <td class="mc-row-actions">
-                        <button type="button" class="mc-icobtn" data-action="move" title="Move to main deck">
-                            <i data-lucide="arrow-right-left" width="14" height="14"></i>
-                        </button>
-                        <button type="button" class="mc-icobtn" data-action="remove" title="Remove">
-                            <i data-lucide="x" width="14" height="14"></i>
-                        </button>
-                    </td>
-                </tr>
-                {% endfor %}
-            </tbody>
-        </table>
+    {# ── Middle: deck list ────────────────────────────────────────────── #}
+    <main class="mc-db-list" aria-label="Deck list">
+        <div class="mc-db-tabs" role="tablist">
+            <button type="button" class="mc-db-tab is-active" data-tab="main" id="mainTabLabel" role="tab">Main · {{ deck.main_total }}</button>
+            <button type="button" class="mc-db-tab" data-tab="side" id="sideTabLabel" role="tab">Sideboard · {{ deck.side_total }}</button>
+            <span class="mc-db-tab-extra">
+                <span>Group: Type</span>
+                <span>List</span>
+            </span>
         </div>
-        {% else %}
-        <p class="mc-muted small">No cards in the sideboard yet.</p>
-        {% endif %}
-    </section>
-</div>
 
-<div class="mc-foot-stats">
-    <span id="footTotal">{{ deck.total_cards }} cards</span>
-    <span id="footUnique">{{ deck.unique_cards }} unique</span>
-    <span id="footValue">{% if deck.value %}{{ currency_symbol }}{{ "%.2f"|format(deck.value) }}{% endif %}</span>
-    <span class="ms-auto">
-        Owned {{ deck.owned_copies }}/{{ deck.total_cards }}
-        {% if deck.missing_names %} · {{ deck.missing_names|length }} missing{% endif %}
-    </span>
+        <div class="mc-db-list-panel" id="tab-main" role="tabpanel">
+            {% for g in deck.main_groups %}
+            <div class="mc-db-group">
+                <div class="mc-db-group-head"><span>{{ g.title }}</span><span>{{ g.rows|length }}</span></div>
+                {% for c in g.rows %}
+                <div class="mc-db-row{% if c.missing %} is-missing{% endif %}" data-name="{{ c.name }}"
+                     data-side="0" data-qty="{{ c.quantity }}">
+                    <span class="mc-db-row-qty">{{ c.quantity }}</span>
+                    <span class="mc-db-row-name" title="{{ c.name }}">{{ c.name }}</span>
+                    <span class="mc-db-row-cost">{{ c.mana_cost|mana_symbols }}</span>
+                    <span class="mc-db-row-own{% if c.missing %} is-miss{% endif %}">
+                        {%- if c.missing %}Not found
+                        {%- elif c.fully_owned %}Owned
+                        {%- elif c.in_collection %}Have {{ c.in_collection }}
+                        {%- else %}Missing{% endif -%}
+                    </span>
+                    <span class="mc-db-row-actions">
+                        <button type="button" class="mc-icobtn" data-act="minus" title="One fewer">−</button>
+                        <button type="button" class="mc-icobtn" data-act="plus" title="One more">+</button>
+                        <button type="button" class="mc-icobtn" data-act="move" title="Move to sideboard">
+                            <i data-lucide="arrow-right-left" width="13" height="13"></i>
+                        </button>
+                        <button type="button" class="mc-icobtn" data-act="remove" title="Remove">
+                            <i data-lucide="x" width="13" height="13"></i>
+                        </button>
+                    </span>
+                </div>
+                {% endfor %}
+            </div>
+            {% else %}
+            <p class="mc-muted small">No cards in the main deck yet. Search on the left to add one.</p>
+            {% endfor %}
+        </div>
+
+        <div class="mc-db-list-panel" id="tab-side" role="tabpanel" hidden>
+            {% for g in deck.side_groups %}
+            <div class="mc-db-group">
+                <div class="mc-db-group-head"><span>{{ g.title }}</span><span>{{ g.rows|length }}</span></div>
+                {% for c in g.rows %}
+                <div class="mc-db-row{% if c.missing %} is-missing{% endif %}" data-name="{{ c.name }}"
+                     data-side="1" data-qty="{{ c.quantity }}">
+                    <span class="mc-db-row-qty">{{ c.quantity }}</span>
+                    <span class="mc-db-row-name" title="{{ c.name }}">{{ c.name }}</span>
+                    <span class="mc-db-row-cost">{{ c.mana_cost|mana_symbols }}</span>
+                    <span class="mc-db-row-own{% if c.missing %} is-miss{% endif %}">
+                        {%- if c.missing %}Not found
+                        {%- elif c.fully_owned %}Owned
+                        {%- elif c.in_collection %}Have {{ c.in_collection }}
+                        {%- else %}Missing{% endif -%}
+                    </span>
+                    <span class="mc-db-row-actions">
+                        <button type="button" class="mc-icobtn" data-act="minus" title="One fewer">−</button>
+                        <button type="button" class="mc-icobtn" data-act="plus" title="One more">+</button>
+                        <button type="button" class="mc-icobtn" data-act="move" title="Move to main deck">
+                            <i data-lucide="arrow-right-left" width="13" height="13"></i>
+                        </button>
+                        <button type="button" class="mc-icobtn" data-act="remove" title="Remove">
+                            <i data-lucide="x" width="13" height="13"></i>
+                        </button>
+                    </span>
+                </div>
+                {% endfor %}
+            </div>
+            {% else %}
+            <p class="mc-muted small">No cards in the sideboard yet.</p>
+            {% endfor %}
+        </div>
+    </main>
+
+    {# ── Right: preview and checks ───────────────────────────────────── #}
+    <aside class="mc-db-preview" aria-label="Deck overview">
+        {% if deck.preview %}
+        <img class="mc-db-preview-img" src="{{ deck.preview }}" alt="{{ deck.name }}"
+             data-preview-src="{{ deck.preview }}" data-preview-name="{{ deck.name }}">
+        {% else %}
+        <div class="mc-db-preview-img mc-db-preview-empty" aria-hidden="true">
+            <i data-lucide="images" width="22" height="22"></i>
+        </div>
+        {% endif %}
+
+        <div class="mc-db-block">
+            <div class="mc-db-block-label">Ownership</div>
+            <div class="mc-db-own-num">{{ deck.owned_copies }} / {{ deck.total_cards }} <span class="mc-muted">owned</span></div>
+            <div class="mc-progress"><span style="width:{{ deck.pct }}%;" {% if deck.pct >= 100 %}class="is-complete"{% endif %}></span></div>
+            {% if deck.missing_names %}
+            <div class="mc-db-own-missing">
+                <span>Missing {{ deck.missing_names|length }}:</span> {{ deck.missing_names|join(', ') }}.
+                <button type="button" class="mc-db-link" id="showMissingBtn">Show missing only</button>
+            </div>
+            {% else %}
+            <div class="mc-db-own-missing">Every card is in your collection.</div>
+            {% endif %}
+        </div>
+
+        <div class="mc-db-block">
+            <div class="mc-db-block-label">Mana curve</div>
+            {% if deck.curve %}
+            <div class="mc-db-curve">
+                {% for b in deck.curve %}
+                <div class="mc-db-curve-col" title="{{ b.count }} card{{ 's' if b.count != 1 else '' }}">
+                    <div class="mc-db-curve-bar"><span style="height:{{ b.pct }}%;"></span></div>
+                    <span class="mc-db-curve-label">{{ b.label }}</span>
+                </div>
+                {% endfor %}
+            </div>
+            {% else %}
+            <p class="mc-muted small mb-0">No cards to show.</p>
+            {% endif %}
+        </div>
+
+        <div class="mc-db-block">
+            <div class="mc-db-block-label">Checks</div>
+            <ul class="mc-db-checks">
+                {% for c in deck.checks %}<li>{{ c }}</li>{% endfor %}
+            </ul>
+        </div>
+    </aside>
 </div>
 
 {# ── Edit deck modal (metadata only; cards edited inline) ────────────── #}
 <div class="modal fade" id="editDeckModal" tabindex="-1">
   <div class="modal-dialog">
-    <form class="modal-content rounded-0" method="POST" action="{{ url_for('update_deck') }}">
+    <form class="modal-content rounded-0" id="editDeckForm">
       <input type="hidden" name="deck_id" value="{{ deck.id }}">
       <div class="modal-header border-0 pb-0">
         <h5 class="modal-title">Edit deck</h5>
@@ -221,9 +231,25 @@
       </div>
       <div class="modal-footer border-0">
         <button type="button" class="mc-btn mc-btn-secondary" data-bs-dismiss="modal">Cancel</button>
-        <button type="submit" class="mc-btn mc-btn-primary">Save</button>
+        <button type="submit" class="mc-btn mc-btn-primary" id="editSaveBtn">Save</button>
       </div>
     </form>
+  </div>
+</div>
+
+{# ── Empty deck modal ─────────────────────────────────────────────────── #}
+<div class="modal fade" id="emptyDeckModal" tabindex="-1">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content rounded-0">
+      <div class="modal-body">
+        <h5 class="mb-2">Empty “{{ deck.name }}”?</h5>
+        <p class="mc-muted mb-0">All cards are removed from this deck. The deck itself and your collection are not affected.</p>
+      </div>
+      <div class="modal-footer border-0">
+        <button type="button" class="mc-btn mc-btn-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button type="button" class="mc-btn mc-btn-danger" id="confirmEmptyDeck">Empty deck</button>
+      </div>
+    </div>
   </div>
 </div>
 
@@ -257,7 +283,7 @@
             <div class="col-md-6">
               <label class="form-label">Main deck</label>
               <textarea name="main_deck_text" class="form-control" rows="14"
-                        placeholder="4 Lightning Bolt&#10;2 Counterspell&#10;…">{{ deck.main_deck_text if deck.main_deck_text else '' }}</textarea>
+                        placeholder="4 Lightning Bolt&#10;2 Counterspell&#10;…"></textarea>
             </div>
             <div class="col-md-6">
               <label class="form-label">Sideboard</label>
@@ -278,9 +304,10 @@
 
 <script>
 const DECK_ID = {{ deck.id }};
+const DECK_NAME = {{ deck.name|tojson }};
 const CURR_SYM = '{{ currency_symbol }}';
 
-/* Autocomplete options for quick-add, same source as the sidebar. */
+/* Autocomplete options for the add-search, same source as the sidebar. */
 fetch('/api/card_names')
     .then(r => r.json())
     .then(d => {
@@ -293,16 +320,12 @@ fetch('/api/card_names')
     })
     .catch(() => {});
 
-function formatMoney(v) { return v > 0 ? CURR_SYM + v.toFixed(2) : ''; }
-
-function updateDeckTotals(d) {
-    const main = parseInt(d.main_total) || 0;
-    const side = parseInt(d.side_total) || 0;
-    document.getElementById('mainCount').textContent = main + ' cards';
-    document.getElementById('sideCount').textContent = side + ' cards';
-    document.getElementById('footTotal').textContent = (main + side) + ' cards';
-    document.getElementById('footValue').textContent = formatMoney(parseFloat(d.value) || 0);
+function esc(s) {
+    return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
+
+function formatMoney(v) { return v > 0 ? CURR_SYM + v.toFixed(2) : ''; }
 
 function deckPost(name, quantity, side) {
     return fetch('/deck/' + DECK_ID + '/cards', {
@@ -312,77 +335,207 @@ function deckPost(name, quantity, side) {
     }).then(r => r.json());
 }
 
-/* Row controls: steppers + move + remove, delegated per table body. */
-['mainTableBody', 'sideTableBody'].forEach(function(bodyId) {
-    const body = document.getElementById(bodyId);
-    if (!body) return;
-    body.addEventListener('click', function(e) {
+function updateDeckTotals(d) {
+    const main = parseInt(d.main_total) || 0;
+    const side = parseInt(d.side_total) || 0;
+    const mainTab = document.getElementById('mainTabLabel');
+    const sideTab = document.getElementById('sideTabLabel');
+    if (mainTab) mainTab.textContent = 'Main · ' + main;
+    if (sideTab) sideTab.textContent = 'Sideboard · ' + side;
+}
+
+/* ── Left add-search panel ────────────────────────────────────────────── */
+const addInput = document.getElementById('deckAddSearch');
+const addResultsBox = document.getElementById('deckAddResults');
+let searchTimer = null;
+
+function activeScope() {
+    const el = document.querySelector('.mc-db-add .mc-seg-opt.is-active');
+    return el ? el.dataset.scope : 'owned_first';
+}
+function doDeckAddSearch() {
+    const q = addInput.value.trim();
+    if (q.length < 2) { addResultsBox.innerHTML = ''; return; }
+    fetch('/api/deck_add_search?q=' + encodeURIComponent(q) + '&scope=' + activeScope())
+        .then(r => r.json())
+        .then(d => renderAddResults(d.results || []))
+        .catch(() => { addResultsBox.innerHTML = '<p class="mc-db-results-empty">Search failed.</p>'; });
+}
+function manaPips(cost) {
+    if (!cost) return '';
+    return (cost.match(/\{[^{}]+\}/g) || []).map(s => {
+        const sym = s.replace(/[^0-9A-Za-z]/g, '');
+        return '<img class="mc-mana" src="https://svgs.scryfall.io/card-symbols/' + sym + '.svg" alt="' + esc(s) + '" width="13" height="13">';
+    }).join('');
+}
+function renderAddResults(list) {
+    if (!list.length) { addResultsBox.innerHTML = '<p class="mc-db-results-empty">No matches.</p>'; return; }
+    addResultsBox.innerHTML = list.map(r => {
+        const own = r.own ? 'Have ' + r.own : 'Missing';
+        const img = r.image
+            ? '<img class="mc-db-result-img" src="' + esc(r.image) + '" alt="" loading="lazy">'
+            : '<span class="mc-db-result-img"></span>';
+        return '<div class="mc-db-result" data-name="' + esc(r.name) + '">' +
+            '<div class="mc-db-result-main">' + img +
+                '<div class="mc-db-result-info">' +
+                    '<span class="mc-db-result-name-cell">' + esc(r.name) + '</span>' +
+                    '<span class="mc-db-result-cost">' + manaPips(r.mana_cost) + '</span>' +
+                '</div>' +
+                '<span class="mc-db-result-own">' + esc(own) + '</span>' +
+            '</div>' +
+            '<div class="mc-db-result-acts">' +
+                '<button type="button" class="mc-tag-btn" data-side="0">+ Main</button>' +
+                '<button type="button" class="mc-tag-btn" data-side="1">+ Side</button>' +
+            '</div>' +
+        '</div>';
+    }).join('');
+}
+
+addInput.addEventListener('input', function() {
+    clearTimeout(searchTimer);
+    searchTimer = setTimeout(doDeckAddSearch, 180);
+});
+
+document.querySelectorAll('.mc-db-add .mc-seg-opt').forEach(btn => {
+    btn.addEventListener('click', function() {
+        document.querySelectorAll('.mc-db-add .mc-seg-opt').forEach(b => b.classList.toggle('is-active', b === this));
+        if (addInput.value.trim().length >= 2) doDeckAddSearch();
+    });
+});
+
+addResultsBox.addEventListener('click', function(e) {
+    const btn = e.target.closest('[data-side]');
+    if (!btn) return;
+    const row = btn.closest('.mc-db-result');
+    if (!row) return;
+    btn.disabled = true;
+    deckPost(row.dataset.name, 1, btn.dataset.side).then(d => {
+        if (d.success) location.reload();
+        else { alert(d.message); btn.disabled = false; }
+    }).catch(() => { btn.disabled = false; alert('Add failed'); });
+});
+
+/* ── Tabs: Main / Sideboard ───────────────────────────────────────────── */
+document.querySelectorAll('.mc-db-tab').forEach(tab => {
+    tab.addEventListener('click', function() {
+        document.querySelectorAll('.mc-db-tab').forEach(t => t.classList.toggle('is-active', t === this));
+        document.getElementById('tab-main').hidden = this.dataset.tab !== 'main';
+        document.getElementById('tab-side').hidden = this.dataset.tab !== 'side';
+    });
+});
+
+/* ── Row controls: steppers + move + remove ───────────────────────────── */
+['tab-main', 'tab-side'].forEach(function(panelId) {
+    const panel = document.getElementById(panelId);
+    if (!panel) return;
+    panel.addEventListener('click', function(e) {
         const btn = e.target.closest('button');
         if (!btn) return;
         e.stopPropagation();
-        const row = btn.closest('.deck-row');
+        const row = btn.closest('.mc-db-row');
         const name = row.dataset.name;
         const side = row.dataset.side;
-        const qtyEl = row.querySelector('.mc-step-qty');
-        const action = btn.dataset.action;
+        const act = btn.dataset.act;
+        const qty = parseInt(row.dataset.qty) || 0;
 
-        if (action === 'move') {
+        if (act === 'minus' || act === 'plus') {
+            const newQty = Math.max(0, qty + (act === 'plus' ? 1 : -1));
+            if (newQty === qty) return;
             btn.disabled = true;
-            deckPost(name, parseInt(row.dataset.qty), side === '1' ? '0' : '1')
+            deckPost(name, newQty, side).then(d => {
+                if (d.success) {
+                    row.dataset.qty = newQty;
+                    row.querySelector('.mc-db-row-qty').textContent = newQty;
+                    updateDeckTotals(d);
+                    if (newQty === 0) row.remove();
+                    if (d.value) {
+                        const meta = document.querySelector('.mc-db-meta');
+                        if (meta) { meta.textContent += ''; } // value refresh handled on reload
+                    }
+                } else alert(d.message);
+                btn.disabled = false;
+            }).catch(() => location.reload());
+            return;
+        }
+        if (act === 'move') {
+            btn.disabled = true;
+            deckPost(name, qty, side === '1' ? '0' : '1')
                 .then(d => { if (d.success) location.reload(); else alert(d.message); })
                 .catch(() => alert('Move failed'));
             return;
         }
-        if (action === 'remove') {
+        if (act === 'remove') {
             btn.disabled = true;
             deckPost(name, 0, side).then(d => {
                 if (d.success) { row.remove(); updateDeckTotals(d); }
                 else alert(d.message);
+                btn.disabled = false;
             }).catch(() => alert('Remove failed'));
             return;
         }
-
-        const delta = parseInt(btn.dataset.delta) || 0;
-        const oldQty = parseInt(qtyEl.textContent) || 0;
-        const newQty = Math.max(0, oldQty + delta);
-        if (newQty === oldQty) return;
-        qtyEl.textContent = newQty;
-        row.dataset.qty = newQty;
-        deckPost(name, newQty, side).then(d => {
-            if (!d.success) { location.reload(); return; }
-            updateDeckTotals(d);
-            if (newQty === 0) { row.remove(); updateDeckTotals(d); }
-        }).catch(() => location.reload());
     });
 });
 
-/* Quick add by name. */
-document.getElementById('quickAddBtn').addEventListener('click', function() {
-    const input = document.getElementById('deckQuickAdd');
-    const name = input.value.trim();
-    if (!name) return;
-    input.disabled = true;
-    deckPost(name, 1, '0').then(d => {
-        if (d.success) location.reload();
-        else { alert(d.message); input.disabled = false; }
-    }).catch(() => { input.disabled = false; alert('Add failed'); });
+/* ── Show missing only ────────────────────────────────────────────────── */
+const showMissingBtn = document.getElementById('showMissingBtn');
+if (showMissingBtn) {
+    let hidingOwned = false;
+    showMissingBtn.addEventListener('click', function() {
+        hidingOwned = !hidingOwned;
+        document.querySelectorAll('.mc-db-list-panel').forEach(p => p.classList.toggle('show-missing-only', hidingOwned));
+        this.textContent = hidingOwned ? 'Show all' : 'Show missing only';
+    });
+}
+
+/* ── Export list ──────────────────────────────────────────────────────── */
+document.getElementById('exportListBtn').addEventListener('click', function() {
+    const lines = ['// ' + DECK_NAME, ''];
+    const mainRows = document.querySelectorAll('#tab-main .mc-db-row');
+    const sideRows = document.querySelectorAll('#tab-side .mc-db-row');
+    if (mainRows.length) {
+        lines.push('// Main deck');
+        mainRows.forEach(r => lines.push(r.dataset.qty + ' ' + r.dataset.name));
+    }
+    if (sideRows.length) {
+        lines.push(''); lines.push('// Sideboard');
+        sideRows.forEach(r => lines.push(r.dataset.qty + ' ' + r.dataset.name));
+    }
+    if (!mainRows.length && !sideRows.length) { alert('This deck has no cards to export.'); return; }
+    const blob = new Blob([lines.join('\n')], {type: 'text/plain'});
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = (DECK_NAME.replace(/[^a-z0-9]+/gi, '-').replace(/^-+|-+$/g, '') || 'deck') + '.txt';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
 });
 
-/* Add whole deck to a collection binder. */
-document.getElementById('addToCollectionBtn').addEventListener('click', function() {
-    const btn = this;
-    btn.disabled = true;
+/* ── Add whole deck to a collection binder ────────────────────────────── */
+document.getElementById('addToCollectionItem').addEventListener('click', function() {
+    const item = this;
+    item.disabled = true;
     fetch('/deck/' + DECK_ID + '/add_to_collection', {method: 'POST'})
         .then(r => r.json())
         .then(d => {
             if (d.success) (window.spaNavigate || (u => { location.href = u; }))('/collection/' + d.group_id);
             else alert(d.message);
-            btn.disabled = false;
+            item.disabled = false;
         })
-        .catch(() => { btn.disabled = false; alert('Failed to add deck to collection'); });
+        .catch(() => { item.disabled = false; alert('Failed to add deck to collection'); });
 });
 
-/* Delete deck. */
+/* ── Empty deck ───────────────────────────────────────────────────────── */
+document.getElementById('confirmEmptyDeck').addEventListener('click', function() {
+    fetch('/deck/' + DECK_ID + '/clear', {method: 'POST'})
+        .then(r => r.json())
+        .then(d => {
+            if (d.success) (window.spaNavigate || (u => { location.href = u; }))('/deck/' + DECK_ID);
+            else alert(d.message);
+        })
+        .catch(() => alert('Failed to empty deck'));
+});
+
+/* ── Delete deck ──────────────────────────────────────────────────────── */
 document.getElementById('confirmDeleteDeck').addEventListener('click', function() {
     fetch('/delete_deck', {
         method: 'POST',
@@ -391,16 +544,33 @@ document.getElementById('confirmDeleteDeck').addEventListener('click', function(
     }).then(r => r.json()).then(d => {
         if (d.success) (window.spaNavigate || (u => { location.href = u; }))('/decks');
         else alert(d.message);
-    });
+    }).catch(() => alert('Failed to delete deck'));
 });
 
-/* Paste list: full resync via /update_deck, then reopen with missing highlight. */
+/* ── Edit deck: metadata-only save via fetch (keeps the modal from
+ *    dumping the JSON response as a page). */
+document.getElementById('editDeckForm').addEventListener('submit', function(e) {
+    e.preventDefault();
+    const btn = document.getElementById('editSaveBtn');
+    btn.disabled = true;
+    fetch('/update_deck', {method: 'POST', body: new FormData(this)})
+        .then(r => r.json())
+        .then(d => {
+            if (d.success) {
+                const modal = bootstrap.Modal.getInstance(document.getElementById('editDeckModal'));
+                if (modal) modal.hide();
+                (window.spaNavigate || (u => { location.href = u; }))('/deck/' + DECK_ID);
+            } else { alert(d.message); btn.disabled = false; }
+        })
+        .catch(() => { btn.disabled = false; alert('Failed to save deck'); });
+});
+
+/* ── Paste list: full resync via /update_deck, then reopen with missing highlight. */
 document.getElementById('pasteForm').addEventListener('submit', function(e) {
     e.preventDefault();
     const btn = document.getElementById('pasteSaveBtn');
     btn.disabled = true;
-    const form = this;
-    fetch('/update_deck', {method: 'POST', body: new FormData(form)})
+    fetch('/update_deck', {method: 'POST', body: new FormData(this)})
         .then(r => r.json())
         .then(d => {
             if (d.success) {

@@ -8,11 +8,6 @@
         <h1 class="mc-h1 mb-1">Decks</h1>
         <p class="mc-sub mb-0">{{ "{:,}".format(decks|length) }} deck{{ 's' if decks|length != 1 else '' }}</p>
     </div>
-    <div class="mc-page-actions">
-        <a class="mc-btn mc-btn-primary" href="{{ url_for('deck_new') }}">
-            <i data-lucide="plus" width="15" height="15"></i> New deck
-        </a>
-    </div>
 </div>
 
 {% if decks %}
@@ -24,10 +19,18 @@
             {% if not d.image_url %}<span class="mc-deck-initial">{{ d.name[:1] }}</span>{% endif %}
         </div>
         <div class="mc-deck-body">
-            <div class="mc-deck-name">{{ d.name }}</div>
+            <div class="mc-deck-title-row">
+                <span class="mc-deck-name">{{ d.name }}</span>
+                <span class="mc-deck-pips">
+                    {%- for l in d.colors -%}
+                    <img class="mc-mana mc-mana-sm" src="https://svgs.scryfall.io/card-symbols/{{ l }}.svg"
+                         alt="{{ l }}" width="15" height="15">
+                    {%- endfor -%}
+                </span>
+            </div>
             <div class="mc-deck-meta">
-                {{ d.main_total }} main{% if d.side_total %} · {{ d.side_total }} side{% endif %}
-                {% if d.format %} · {{ d.format }}{% endif %}
+                <span>{{ d.format or 'Casual' }} · {{ d.total_cards }} cards</span>
+                <span class="mc-deck-value">{% if d.value %}{{ currency_symbol }}{{ "%.2f"|format(d.value) }}{% endif %}</span>
             </div>
             <div class="mc-deck-progress">
                 <div class="mc-progress flex-grow-1">
@@ -35,17 +38,19 @@
                 </div>
                 <span class="mc-deck-owned">{{ d.owned_copies }}/{{ d.total_cards }}</span>
             </div>
-            <div class="mc-deck-foot">
-                <span class="mc-deck-value">
-                    {% if d.value %}{{ currency_symbol }}{{ "%.2f"|format(d.value) }}{% endif %}
-                </span>
-                <span class="mc-deck-edited">
-                    {% if d.missing %}{{ d.missing|length }} missing{% else %}Edited {{ (d.updated_at or '')[:10] }}{% endif %}
-                </span>
+            <div class="mc-deck-state{% if d.total_cards == 0 %} is-empty{% elif d.pct >= 100 %} is-ok{% elif d.missing %} is-miss{% else %} is-part{% endif %}">
+                {%- if d.total_cards == 0 %}Empty deck
+                {%- elif d.pct >= 100 %}Complete
+                {%- elif d.missing %}{{ d.missing|length }} missing
+                {%- else %}{{ d.owned_copies }}/{{ d.total_cards }} owned{% endif -%}
             </div>
         </div>
     </a>
     {% endfor %}
+    <a class="mc-deck-card mc-deck-card-new" href="{{ url_for('deck_new') }}">
+        <i data-lucide="plus" width="20" height="20"></i>
+        <span>New deck</span>
+    </a>
 </div>
 {% else %}
 <div class="mc-empty">

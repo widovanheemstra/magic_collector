@@ -2015,6 +2015,54 @@ def api_card_names():
     return jsonify({'names': names})
 
 
+@app.route('/api/deck_add_search')
+def deck_add_search_api():
+    """Search cards for the deck-builder add panel.
+
+    Returns up to 15 matches with name, mana cost, type, price and owned
+    copies. scope is one of owned_first (default), owned_only or all.
+    """
+    q = (request.args.get('q') or '').strip()
+    scope = request.args.get('scope') or 'owned_first'
+    if len(q) < 2:
+        return jsonify({'results': []})
+
+    conn = sqlite3.connect(DATABASE)
+    cursor = conn.cursor()
+    like = f'%{q}%'
+    cursor.execute('''
+        SELECT c.name, c.mana_cost, c.prices, c.image_uris, c.type_line,
+               COALESCE(SUM(CASE WHEN uc.is_foil = 0 THEN uc.quantity END), 0) AS nf,
+               COALESCE(SUM(CASE WHEN uc.is_foil = 1 THEN uc.quantity END), 0) AS f
+        FROM cards c
+        LEFT JOIN user_collection uc ON uc.card_id = c.id
+        WHERE c.name LIKE ? OR c.type_line LIKE ?
+        GROUP BY c.id
+        ORDER BY c.name COLLATE NOCASE
+        LIMIT 60
+    ''', (like, like))
+    currency = get_currency()
+    results = []
+    for name, mana_cost, prices, image_uris, type_line, nf, f in cursor.fetchall():
+        own = (nf or 0) + (f or 0)
+        if scope == 'owned_only' and own == 0:
+            continue
+        img = parse_optional(image_uris) or {}
+        results.append({
+            'name': name,
+            'mana_cost': mana_cost or '',
+            'type_line': type_line or '',
+            'own': own,
+            'price': price_from_json(prices, False, currency),
+            'image': img.get('small') or img.get('normal'),
+        })
+    conn.close()
+
+    if scope == 'owned_first':
+        results.sort(key=lambda r: (r['own'] == 0, r['name'].lower()))
+    return jsonify({'results': results[:15]})
+
+
 @app.route('/api/card_by_name')
 def api_card_by_name():
     """Return card detail JSON for the most recent printing of a name.
@@ -2345,6 +2393,15 @@ def decks():
         ''')
         owned_by_name = dict(cursor.fetchall())
 
+        # Distinct colors per deck (for the color pips next to each deck name)
+        colors_by_deck = {}
+        for deck_id, ci in cursor.execute(
+                'SELECT dc.deck_id, c.color_identity FROM deck_cards dc '
+                'JOIN cards c ON c.name = dc.card_name').fetchall():
+            for letter in (parse_optional(ci) or []):
+                if letter in COLOR_ORDER:
+                    colors_by_deck.setdefault(deck_id, set()).add(letter)
+
         deck_data = []
         for deck in decks:
             deck_id, name, description, format_name, image_url, created_at, updated_at = deck
@@ -2387,6 +2444,7 @@ def decks():
                 'owned_copies': owned_copies,
                 'missing': missing,
                 'pct': (owned_copies / required * 100) if required else 0,
+                'colors': ''.join(sorted(colors_by_deck.get(deck_id, ()), key=COLOR_ORDER.index)),
             })
 
         conn.close()
@@ -2472,6 +2530,24 @@ def delete_deck():
         
     except Exception as e:
         return jsonify({'success': False, 'message': f'Error deleting deck: {str(e)}'})
+
+@app.route('/deck/<int:deck_id>/clear', methods=['POST'])
+def clear_deck(deck_id):
+    """Remove every card from a deck without deleting the deck itself."""
+    try:
+        conn = sqlite3.connect(DATABASE)
+        cur = conn.cursor()
+        cur.execute('SELECT id FROM decks WHERE id = ?', (deck_id,))
+        if not cur.fetchone():
+            conn.close()
+            return jsonify({'success': False, 'message': 'Deck not found'}), 404
+        cur.execute('DELETE FROM deck_cards WHERE deck_id = ?', (deck_id,))
+        cur.execute('UPDATE decks SET updated_at = CURRENT_TIMESTAMP WHERE id = ?', (deck_id,))
+        conn.commit()
+        conn.close()
+        return jsonify({'success': True, 'message': 'Deck emptied'})
+    except Exception as e:
+        return jsonify({'success': False, 'message': f'Error emptying deck: {str(e)}'})
 
 @app.route('/delete_all_decks', methods=['POST'])
 def delete_all_decks():
@@ -2628,7 +2704,6 @@ def deck_view(deck_id):
         currency = get_currency()
         deck_value = get_deck_value(cursor, deck_id, currency)
         rows = get_deck_card_rows(cursor, deck_id, currency)
-        conn.close()
 
         highlight_missing = [c for c in request.args.get('missing', '').split('|') if c]
         main_cards = [r for r in rows if not r['is_sideboard']]
@@ -2638,6 +2713,19 @@ def deck_view(deck_id):
         required = main_total + side_total
         owned_copies = sum(min(r['in_collection'], r['quantity']) for r in rows if not r['missing'])
         missing_names = sorted({r['name'] for r in rows if r['missing']})
+        unique_cards = len({r['name'] for r in rows})
+
+        colors = deck_color_letters(cursor, deck_id)
+        main_groups = group_deck_rows_by_type(main_cards)
+        side_groups = group_deck_rows_by_type(side_cards)
+        curve = deck_curve(rows)
+        preview = next((r['image'] for r in sorted(rows, key=lambda r: -r['quantity']) if r['image']),
+                       image_url)
+        checks = [
+            f'{required} cards · {unique_cards} unique',
+            f"Colors: {' · '.join(colors)}" if colors else 'Colorless deck',
+            (f'{len(missing_names)} missing from your collection' if missing_names else 'All cards owned'),
+        ]
 
         deck_data = {
             'id': deck_id,
@@ -2652,11 +2740,19 @@ def deck_view(deck_id):
             'main_total': main_total,
             'side_total': side_total,
             'total_cards': required,
-            'unique_cards': len(rows),
+            'unique_cards': unique_cards,
             'owned_copies': owned_copies,
             'missing_names': missing_names,
             'value': deck_value,
+            'colors': colors,
+            'main_groups': main_groups,
+            'side_groups': side_groups,
+            'curve': curve,
+            'preview': preview,
+            'checks': checks,
+            'pct': (owned_copies / required * 100) if required else 0,
         }
+        conn.close()
         return render_template('deck_view.html', deck=deck_data,
                                missing_cards=highlight_missing, currency=currency)
 
@@ -2863,19 +2959,21 @@ def get_deck_card_rows(cursor, deck_id, currency='USD'):
     placeholders = ','.join('?' for _ in names)
 
     cursor.execute(f'''
-        SELECT name, type_line, prices, image_uris
+        SELECT name, type_line, mana_cost, cmc, prices, image_uris
         FROM cards
         WHERE name IN ({placeholders})
         ORDER BY name, (image_uris IS NULL OR image_uris = ''), created_at DESC
     ''', names)
     best = {}
-    for name, type_line, prices, image_uris in cursor.fetchall():
+    for name, type_line, mana_cost, cmc, prices, image_uris in cursor.fetchall():
         if name in best:
             continue
         img = parse_optional(image_uris) or {}
         best[name] = {
             'name': name,
             'type_line': type_line,
+            'mana_cost': mana_cost,
+            'cmc': cmc or 0,
             'price': price_from_json(prices, False, currency),
             'image': img.get('art_crop') or img.get('normal') or img.get('small'),
         }
@@ -2893,7 +2991,8 @@ def get_deck_card_rows(cursor, deck_id, currency='USD'):
 
     rows = []
     for name, quantity, is_sideboard in entries:
-        info = best.get(name, {'name': name, 'type_line': '', 'price': None, 'image': None})
+        info = best.get(name, {'name': name, 'type_line': '', 'mana_cost': '', 'cmc': 0,
+                               'price': None, 'image': None})
         owned = owner.get(name, 0)
         missing = name not in existing
         rows.append({
@@ -2901,6 +3000,8 @@ def get_deck_card_rows(cursor, deck_id, currency='USD'):
             'quantity': quantity,
             'is_sideboard': bool(is_sideboard),
             'type_line': info['type_line'] or 'Unknown',
+            'mana_cost': info['mana_cost'] or '',
+            'cmc': info['cmc'] or 0,
             'price': info['price'],
             'image': info['image'],
             'in_collection': owned,
@@ -2908,6 +3009,71 @@ def get_deck_card_rows(cursor, deck_id, currency='USD'):
             'missing': missing,
         })
     return rows
+
+
+DECK_TYPE_PLURAL = {
+    'Creature': 'Creatures',
+    'Planeswalker': 'Planeswalkers',
+    'Battle': 'Battles',
+    'Instant': 'Instants',
+    'Sorcery': 'Sorceries',
+    'Artifact': 'Artifacts',
+    'Enchantment': 'Enchantments',
+    'Land': 'Lands',
+    'Kindred': 'Kindreds',
+    'Tribal': 'Tribals',
+    'Phenomenon': 'Phenomena',
+    'Conspiracy': 'Conspiracies',
+}
+DECK_TYPE_ORDER = ['Creatures', 'Planeswalkers', 'Battles', 'Instants', 'Sorceries',
+                   'Artifacts', 'Enchantments', 'Lands', 'Other']
+COLOR_ORDER = 'WUBRG'
+
+
+def group_deck_rows_by_type(rows):
+    """Group deck rows by the first type word (Creature -> Creatures, ...)."""
+    buckets = {}
+    for r in rows:
+        first = (r['type_line'] or 'Unknown').split(' ')[0]
+        title = DECK_TYPE_PLURAL.get(first, first + 's')
+        buckets.setdefault(title, []).append(r)
+    ordered = []
+    seen = set()
+    for title in DECK_TYPE_ORDER:
+        if title in buckets:
+            ordered.append({'title': title, 'rows': sorted(buckets[title], key=lambda r: r['name'].lower())})
+            seen.add(title)
+    for title, rs in buckets.items():
+        if title not in seen:
+            ordered.append({'title': title, 'rows': sorted(rs, key=lambda r: r['name'].lower())})
+    return ordered
+
+
+def deck_color_letters(cursor, deck_id):
+    """Distinct WUBRG color letters across every card in a deck, in WUBRG order."""
+    letters = set()
+    for (ci,) in cursor.execute(
+            'SELECT c.color_identity FROM deck_cards dc JOIN cards c ON c.name = dc.card_name '
+            'WHERE dc.deck_id = ?', (deck_id,)).fetchall():
+        for c in (parse_optional(ci) or []):
+            if c in COLOR_ORDER:
+                letters.add(c)
+    return ''.join(sorted(letters, key=COLOR_ORDER.index)) if letters else ''
+
+
+def deck_curve(rows):
+    """Mana curve buckets (0..7+) weighted by quantity; main deck only."""
+    counts = {}
+    for r in rows:
+        if r['is_sideboard']:
+            continue
+        bucket = '7+' if (r['cmc'] or 0) > 7 else str(int(r['cmc'] or 0))
+        counts[bucket] = counts.get(bucket, 0) + r['quantity']
+    if not counts:
+        return []
+    top = max(counts.values())
+    return [{'label': b, 'count': counts[b], 'pct': round(counts[b] / top * 100)}
+            for b in ['0', '1', '2', '3', '4', '5', '6', '7+'] if b in counts]
 
 def validate_cards_in_database(card_names):
     """Check if all card names exist in the database"""
