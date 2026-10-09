@@ -25,6 +25,13 @@
                 {% for deck in decks %}
                 <div class="col-md-6 col-lg-4 mb-4 deck-tile" data-deck-name="{{ deck.name|lower }}" data-deck-format="{{ (deck.format or '')|lower }}" data-deck-desc="{{ (deck.description or '')|lower }}">
                     <a href="/deck/{{ deck.id }}" class="card h-100 deck-card text-decoration-none" style="color: inherit;">
+                        <div class="card-img-top bg-light d-flex justify-content-center align-items-center" style="min-height: 160px; padding: 1rem;">
+                            {% if deck.image_url %}
+                            <img src="{{ deck.image_url }}" alt="{{ deck.name }}" style="max-height: 140px; max-width: 100%; object-fit: contain;">
+                            {% else %}
+                            <i class="fas fa-layer-group fa-4x text-muted"></i>
+                            {% endif %}
+                        </div>
                         <div class="card-header">
                             <h5 class="card-title mb-0">{{ deck.name }}</h5>
                         </div>
@@ -35,7 +42,10 @@
                             {% if deck.format %}
                                 <span class="badge bg-secondary mb-3">{{ deck.format }}</span>
                             {% endif %}
-                            
+                            {% if deck.value %}
+                                <span class="badge bg-success mb-3">{{ currency_symbol }}{{ "%.2f"|format(deck.value) }}</span>
+                            {% endif %}
+
                             <div class="row text-center">
                                 <div class="col-6">
                                     <div class="card bg-light">

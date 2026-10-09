@@ -61,6 +61,32 @@
                         <label for="deckDescription" class="form-label">Description</label>
                         <textarea class="form-control" id="deckDescription" rows="2">{{ deck.description }}</textarea>
                     </div>
+                    <div class="mb-3">
+                        <label class="form-label">Image (optional)</label>
+                        <ul class="nav nav-tabs nav-fill" role="tablist">
+                            <li class="nav-item"><button class="nav-link active" data-bs-toggle="tab" data-bs-target="#deckImgUrlPane" type="button">URL</button></li>
+                            <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#deckImgGalleryPane" type="button">Choose from Server</button></li>
+                            <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#deckImgUploadPane" type="button">Upload</button></li>
+                        </ul>
+                        <div class="tab-content border border-top-0 rounded-bottom p-3">
+                            <div class="tab-pane fade show active" id="deckImgUrlPane">
+                                <input type="text" id="deckImageUrl" class="form-control" value="{{ deck.image_url or '' }}" placeholder="https://...">
+                                <div class="form-text">If left blank, the deck will use a default icon.</div>
+                            </div>
+                            <div class="tab-pane fade" id="deckImgGalleryPane">
+                                <div id="deckImageGallery" class="d-flex flex-wrap gap-2 group-gallery-grid">
+                                    <p class="text-muted small mb-0">Loading…</p>
+                                </div>
+                            </div>
+                            <div class="tab-pane fade" id="deckImgUploadPane">
+                                <input type="file" id="deckImageFile" class="form-control" accept=".jpg,.jpeg,.png,.gif,.webp,.svg">
+                                <div class="form-text">Accepted formats: JPG, GIF, WEBP, PNG, SVG. Replaces any current image.</div>
+                            </div>
+                        </div>
+                        <div class="mt-2" id="deckImagePreviewWrap" style="{% if not deck.image_url %}display:none;{% endif %}">
+                            <img id="deckImagePreview" src="{{ deck.image_url or '' }}" style="max-height:80px;max-width:160px;object-fit:contain;" class="border rounded p-1">
+                        </div>
+                    </div>
                 </div>
             </div>
 
@@ -149,6 +175,8 @@
 </div>
 
 <script>
+initTileImagePicker('deck');
+
 function saveDeck() {
     const deckId = document.getElementById('deckId').value;
     const name = document.getElementById('deckName').value.trim();
@@ -156,39 +184,40 @@ function saveDeck() {
     const format = document.getElementById('deckFormat').value;
     const mainDeckText = document.getElementById('mainDeckText').value.trim();
     const sideboardText = document.getElementById('sideboardText').value.trim();
-    
+    const imageUrl = document.getElementById('deckImageUrl').value.trim();
+    const imageFile = document.getElementById('deckImageFile').files[0];
+
     if (!name) {
         alert('Please enter a deck name');
         return;
     }
-    
-    // Show loading modal
+
     const loadingModal = new bootstrap.Modal(document.getElementById('loadingModal'));
     loadingModal.show();
-    
-    const deckData = {
-        deck_id: deckId ? parseInt(deckId) : null,
-        name: name,
-        description: description,
-        format: format,
-        main_deck_text: mainDeckText,
-        sideboard_text: sideboardText
-    };
-    
+
+    const formData = new FormData();
+    if (deckId) formData.append('deck_id', deckId);
+    formData.append('name', name);
+    formData.append('description', description);
+    formData.append('format', format);
+    formData.append('main_deck_text', mainDeckText);
+    formData.append('sideboard_text', sideboardText);
+    formData.append('image_url', imageUrl);
+    if (imageFile) formData.append('image_file', imageFile);
+
     fetch('/update_deck', {
         method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(deckData)
+        body: formData
     })
     .then(response => response.json())
     .then(data => {
         loadingModal.hide();
         if (data.success) {
-            const action = deckId ? 'updated' : 'created';
-            alert(`Deck ${action} successfully!`);
-            window.location.href = `/deck/${data.deck_id}`;
+            hasUnsavedChanges = false;
+            const missing = data.missing_cards && data.missing_cards.length
+                ? '?missing=' + encodeURIComponent(data.missing_cards.join('|'))
+                : '';
+            window.location.href = `/deck/${data.deck_id}${missing}`;
         } else {
             alert('Error: ' + data.message);
         }

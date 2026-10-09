@@ -17,6 +17,79 @@ RARITY_ORDER = {'common': 0, 'uncommon': 1, 'rare': 2, 'mythic': 3}
 
 app = Flask(__name__)
 
+SUPPORTED_CURRENCIES = ('USD', 'EUR')
+CURRENCY_SYMBOLS = {'USD': '$', 'EUR': '€'}
+
+
+def get_currency():
+    """Currently selected display currency, from the `currency` cookie (default USD)."""
+    value = request.cookies.get('currency', 'USD')
+    return value if value in SUPPORTED_CURRENCIES else 'USD'
+
+
+@app.context_processor
+def inject_currency():
+    currency = get_currency()
+    return {'currency': currency, 'currency_symbol': CURRENCY_SYMBOLS[currency]}
+
+
+@app.route('/set_currency/<currency>')
+def set_currency(currency):
+    """Persist the display currency choice in a cookie and return to the referring page."""
+    currency = currency.upper()
+    if currency not in SUPPORTED_CURRENCIES:
+        currency = 'USD'
+    next_url = request.referrer or url_for('index')
+    resp = redirect(next_url)
+    resp.set_cookie('currency', currency, max_age=60 * 60 * 24 * 365)
+    return resp
+
+# Tile images (collection groups and decks): pre-bundled choices live in
+# GALLERY_DIR (shared), user uploads are saved into their own per-entity folder.
+ALLOWED_IMAGE_EXTENSIONS = {'jpg', 'jpeg', 'gif', 'webp', 'png', 'svg'}
+GALLERY_DIR = 'group_gallery'
+GROUP_UPLOAD_DIR = 'group_images'
+DECK_UPLOAD_DIR = 'deck_images'
+
+
+def slugify(text):
+    """Lowercase, hyphenated slug for use in filenames."""
+    slug = re.sub(r'[^a-z0-9]+', '-', text.strip().lower()).strip('-')
+    return slug or 'tile'
+
+
+def save_tile_image(file_storage, upload_dir_name, entity_id, name):
+    """Save an uploaded tile image under static/<upload_dir_name>.
+
+    The filename is the entity's name slug plus its id (so a rename doesn't
+    orphan the file and two entities with the same name can't collide).
+    Returns the static URL, or None if the file extension isn't allowed.
+    """
+    ext = file_storage.filename.rsplit('.', 1)[-1].lower() if '.' in file_storage.filename else ''
+    if ext not in ALLOWED_IMAGE_EXTENSIONS:
+        return None
+
+    upload_dir = os.path.join(app.static_folder, upload_dir_name)
+    os.makedirs(upload_dir, exist_ok=True)
+
+    slug = f'{slugify(name)}-{entity_id}'
+    # Remove any previous upload for this entity under a different extension.
+    for existing in os.listdir(upload_dir):
+        if existing.rsplit('.', 1)[0] == slug:
+            os.remove(os.path.join(upload_dir, existing))
+
+    filename = f'{slug}.{ext}'
+    file_storage.save(os.path.join(upload_dir, filename))
+    return url_for('static', filename=f'{upload_dir_name}/{filename}')
+
+
+def save_group_image(file_storage, group_id, group_name):
+    return save_tile_image(file_storage, GROUP_UPLOAD_DIR, group_id, group_name)
+
+
+def save_deck_image(file_storage, deck_id, deck_name):
+    return save_tile_image(file_storage, DECK_UPLOAD_DIR, deck_id, deck_name)
+
 
 def parse_mana_cost(mana_cost, colors_json=None):
     """Parse a mana cost string and return a sort key tuple.
@@ -290,6 +363,13 @@ def init_db():
         # Column already exists, ignore
         pass
 
+    # Add image_url column to decks if it doesn't exist (migration for existing databases)
+    try:
+        cursor.execute('ALTER TABLE decks ADD COLUMN image_url TEXT')
+    except sqlite3.OperationalError:
+        # Column already exists, ignore
+        pass
+
     # Collection groups: every user_collection row belongs to exactly one group.
     # A group is either pinned to a set (set_code non-null, unique) or custom (set_code null).
     cursor.execute('''
@@ -339,6 +419,15 @@ def init_db():
         )
         cursor.execute('DROP TABLE user_collection')
         cursor.execute('ALTER TABLE user_collection_new RENAME TO user_collection')
+
+    # Indexes for hot lookup paths (cards by name, deck_cards by deck, etc.)
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_cards_name ON cards (name)')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_cards_set_id ON cards (set_id)')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_deck_cards_deck_id ON deck_cards (deck_id)')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_user_collection_group_id ON user_collection (group_id)')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_user_collection_card_id ON user_collection (card_id)')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_card_legalities_history_card_id ON card_legalities_history (card_id)')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_card_prices_history_card_id ON card_prices_history (card_id)')
 
     conn.commit()
     conn.close()
@@ -584,20 +673,20 @@ def update_collection_quantity(card_id, quantity, is_foil=False, group_id=None):
     conn.close()
     return quantity
 
-def get_card_price(card_data, is_foil=False):
-    """Extract the appropriate USD price from card data based on foil status"""
+def get_card_price(card_data, is_foil=False, currency='USD'):
+    """Extract the appropriate price from card data based on foil status and currency (USD/EUR)"""
     if not card_data or not card_data[34]:  # prices field is at index 34
         return None
-    
+
+    currency_key = 'eur' if currency == 'EUR' else 'usd'
     try:
         prices = json.loads(card_data[34])
         if is_foil:
-            # For foil cards, try usd_foil first, then fall back to usd
-            price = prices.get('usd_foil') or prices.get('usd')
+            # For foil cards, try the foil price first, then fall back to non-foil
+            price = prices.get(f'{currency_key}_foil') or prices.get(currency_key)
         else:
-            # For non-foil cards, use usd price
-            price = prices.get('usd')
-        
+            price = prices.get(currency_key)
+
         return float(price) if price else None
     except (json.JSONDecodeError, ValueError, TypeError):
         return None
@@ -1029,6 +1118,7 @@ def view_collection():
         ORDER BY (g.set_code IS NULL) DESC, g.updated_at DESC
     ''')
     raw_groups = cursor.fetchall()
+    currency = get_currency()
 
     # Per-group value: sum each row's price * quantity.
     groups = []
@@ -1044,7 +1134,7 @@ def view_collection():
             # Reuse get_card_price by faking a card_data tuple with prices at index 34.
             fake = [None] * 35
             fake[34] = prices_json
-            price = get_card_price(fake, bool(is_foil))
+            price = get_card_price(fake, bool(is_foil), currency)
             if price and qty:
                 group_value += price * qty
         total_collection_value += group_value
@@ -1092,8 +1182,9 @@ def view_collection_group(group_id):
 
     collection_with_prices = []
     total_value = 0
+    currency = get_currency()
     for card_data in collection:
-        price = get_card_price(card_data, card_data[41])
+        price = get_card_price(card_data, card_data[41], currency)
         quantity = card_data[40]
         line_total = price * quantity if price and quantity else None
         collection_with_prices.append((*card_data, price, line_total))
@@ -1288,6 +1379,18 @@ def add_set_to_collection(set_code):
     except Exception as e:
         return jsonify({'success': False, 'message': f'Error adding set to collection: {str(e)}'})
 
+@app.route('/api/tile_gallery_images')
+def api_tile_gallery_images():
+    """List project-bundled images available to pick as a group or deck tile image."""
+    folder = os.path.join(app.static_folder, GALLERY_DIR)
+    images = []
+    if os.path.isdir(folder):
+        for fname in sorted(os.listdir(folder)):
+            ext = fname.rsplit('.', 1)[-1].lower() if '.' in fname else ''
+            if ext in ALLOWED_IMAGE_EXTENSIONS:
+                images.append(url_for('static', filename=f'{GALLERY_DIR}/{fname}'))
+    return jsonify({'images': images})
+
 @app.route('/collection_groups', methods=['POST'])
 def create_collection_group():
     """Create a custom (non-set) collection group."""
@@ -1303,6 +1406,13 @@ def create_collection_group():
     )
     group_id = cursor.lastrowid
     conn.commit()
+
+    upload = request.files.get('image_file')
+    if upload and upload.filename:
+        saved_url = save_group_image(upload, group_id, name)
+        if saved_url:
+            cursor.execute('UPDATE collection_groups SET image_url = ? WHERE id = ?', (saved_url, group_id))
+            conn.commit()
     conn.close()
     return redirect(url_for('view_collection_group', group_id=group_id))
 
@@ -1313,6 +1423,13 @@ def update_collection_group(group_id):
     image_url = (request.form.get('image_url') or '').strip() or None
     if not name:
         return redirect(url_for('view_collection_group', group_id=group_id))
+
+    upload = request.files.get('image_file')
+    if upload and upload.filename:
+        saved_url = save_group_image(upload, group_id, name)
+        if saved_url:
+            image_url = saved_url
+
     conn = sqlite3.connect(DATABASE)
     cursor = conn.cursor()
     cursor.execute(
@@ -1388,6 +1505,58 @@ def get_database_stats():
             'message': f'Error getting database stats: {str(e)}'
         })
 
+def get_deck_value(cursor, deck_id, currency='USD'):
+    """Sum of best-printing price x quantity for every card in a deck (main + sideboard)."""
+    cursor.execute(
+        'SELECT card_name, SUM(quantity) FROM deck_cards WHERE deck_id = ? GROUP BY card_name',
+        (deck_id,)
+    )
+    card_totals = cursor.fetchall()
+    prices_by_name = get_best_prices_for_card_names(cursor, [name for name, _ in card_totals], currency)
+
+    total = 0.0
+    for card_name, quantity in card_totals:
+        price = prices_by_name.get(card_name)
+        if price:
+            total += price * quantity
+    return total
+
+
+def get_best_prices_for_card_names(cursor, card_names, currency='USD'):
+    """Batch-resolve the non-foil price (in the given currency) for the best printing of each card name.
+
+    Avoids one query per card name: a single query pulls every candidate printing
+    for the requested names, and the best printing per name (prefer a printing with
+    image_uris, then most recently added) is picked in Python.
+    """
+    unique_names = list(dict.fromkeys(card_names))
+    if not unique_names:
+        return {}
+
+    prices_by_name = {}
+    CHUNK_SIZE = 500  # stay well under SQLite's default bound-parameter limit
+    for i in range(0, len(unique_names), CHUNK_SIZE):
+        chunk = unique_names[i:i + CHUNK_SIZE]
+        placeholders = ','.join('?' for _ in chunk)
+        cursor.execute(f'''
+            SELECT name, prices, (image_uris IS NULL OR image_uris = '') AS no_image, created_at
+            FROM cards
+            WHERE name IN ({placeholders})
+            ORDER BY name, no_image, created_at DESC
+        ''', chunk)
+
+        for name, prices, _no_image, _created_at in cursor.fetchall():
+            if name in prices_by_name:
+                continue  # already have the best printing for this name (first row per name)
+            if not prices:
+                continue
+            fake_card = [None] * 35
+            fake_card[34] = prices
+            price = get_card_price(fake_card, False, currency)
+            if price:
+                prices_by_name[name] = price
+    return prices_by_name
+
 @app.route('/decks')
 def decks():
     """Display all decks"""
@@ -1397,46 +1566,58 @@ def decks():
         
         # Get all decks
         cursor.execute('''
-            SELECT id, name, description, format, created_at, updated_at
+            SELECT id, name, description, format, image_url, created_at, updated_at
             FROM decks
             ORDER BY updated_at DESC
         ''')
         decks = cursor.fetchall()
-        
-        # Get deck cards for each deck
+
+        # Get every deck's cards in one query instead of two round-trips per deck
+        cursor.execute('''
+            SELECT deck_id, card_name, quantity, is_sideboard
+            FROM deck_cards
+            ORDER BY deck_id, card_name
+        ''')
+        main_by_deck = {}
+        sideboard_by_deck = {}
+        all_card_names = []
+        for deck_id, card_name, quantity, is_sideboard in cursor.fetchall():
+            bucket = sideboard_by_deck if is_sideboard else main_by_deck
+            bucket.setdefault(deck_id, []).append((card_name, quantity))
+            all_card_names.append(card_name)
+
+        # Resolve every card's price once instead of once per deck per card
+        prices_by_name = get_best_prices_for_card_names(cursor, all_card_names, get_currency())
+
         deck_data = []
         for deck in decks:
-            deck_id, name, description, format_name, created_at, updated_at = deck
-            
-            # Get main deck cards
-            cursor.execute('''
-                SELECT card_name, quantity
-                FROM deck_cards
-                WHERE deck_id = ? AND is_sideboard = FALSE
-                ORDER BY card_name
-            ''', (deck_id,))
-            main_deck = cursor.fetchall()
-            
-            # Get sideboard cards
-            cursor.execute('''
-                SELECT card_name, quantity
-                FROM deck_cards
-                WHERE deck_id = ? AND is_sideboard = TRUE
-                ORDER BY card_name
-            ''', (deck_id,))
-            sideboard = cursor.fetchall()
-            
+            deck_id, name, description, format_name, image_url, created_at, updated_at = deck
+
+            main_deck = main_by_deck.get(deck_id, [])
+            sideboard = sideboard_by_deck.get(deck_id, [])
+
+            totals = {}
+            for card_name, quantity in main_deck + sideboard:
+                totals[card_name] = totals.get(card_name, 0) + quantity
+            value = sum(
+                prices_by_name[card_name] * quantity
+                for card_name, quantity in totals.items()
+                if card_name in prices_by_name
+            )
+
             deck_data.append({
                 'id': deck_id,
                 'name': name,
                 'description': description,
                 'format': format_name,
+                'image_url': image_url,
                 'created_at': created_at,
                 'updated_at': updated_at,
                 'main_deck': main_deck,
-                'sideboard': sideboard
+                'sideboard': sideboard,
+                'value': value
             })
-        
+
         conn.close()
         
         return render_template('decks.html', decks=deck_data)
@@ -1660,20 +1841,22 @@ def deck_view(deck_id):
     try:
         conn = sqlite3.connect(DATABASE)
         cursor = conn.cursor()
-        
+
         # Get deck info
         cursor.execute('''
-            SELECT id, name, description, format, created_at, updated_at
+            SELECT id, name, description, format, image_url, created_at, updated_at
             FROM decks
             WHERE id = ?
         ''', (deck_id,))
         deck = cursor.fetchone()
-        
+
         if not deck:
             return "Deck not found", 404
-        
-        deck_id, name, description, format_name, created_at, updated_at = deck
-        
+
+        deck_id, name, description, format_name, image_url, created_at, updated_at = deck
+        missing_cards = [c for c in request.args.get('missing', '').split('|') if c]
+        deck_value = get_deck_value(cursor, deck_id, get_currency())
+
         # Get main deck cards
         cursor.execute('''
             SELECT card_name, quantity
@@ -1729,16 +1912,106 @@ def deck_view(deck_id):
             'name': name,
             'description': description,
             'format': format_name,
+            'image_url': image_url,
             'created_at': created_at,
             'updated_at': updated_at,
             'main_deck': main_deck_with_collection,
             'sideboard': sideboard_with_collection
         }
-        
-        return render_template('deck_view.html', deck=deck_data)
-        
+
+        return render_template('deck_view.html', deck=deck_data, missing_cards=missing_cards, deck_value=deck_value)
+
     except Exception as e:
         return f"Error loading deck: {str(e)}", 500
+
+@app.route('/deck/<int:deck_id>/add_to_collection', methods=['POST'])
+def add_deck_to_collection(deck_id):
+    """Add every resolvable card in a deck (main + sideboard) to a dedicated custom collection group.
+
+    Reuses (rather than duplicates) the group on repeat calls, so re-adding after editing the
+    deck just syncs quantities to the current list. Cards not found locally are synced from
+    Scryfall the same way /update_deck does; whatever still can't be found is left out.
+    """
+    try:
+        conn = sqlite3.connect(DATABASE)
+        cursor = conn.cursor()
+        cursor.execute('SELECT name FROM decks WHERE id = ?', (deck_id,))
+        deck_row = cursor.fetchone()
+        if not deck_row:
+            conn.close()
+            return jsonify({'success': False, 'message': 'Deck not found'}), 404
+        deck_name = deck_row[0]
+
+        cursor.execute(
+            'SELECT card_name, SUM(quantity) FROM deck_cards WHERE deck_id = ? GROUP BY card_name',
+            (deck_id,)
+        )
+        card_totals = cursor.fetchall()
+        conn.close()
+
+        if not card_totals:
+            return jsonify({'success': False, 'message': 'This deck has no cards to add'})
+
+        missing_set = set(validate_cards_in_database([name for name, _ in card_totals]))
+        if missing_set:
+            missing_set = set(sync_missing_cards_from_scryfall(list(missing_set)))
+
+        group_name = f'Deck: {deck_name}'
+        conn = sqlite3.connect(DATABASE)
+        cursor = conn.cursor()
+        cursor.execute('SELECT id FROM collection_groups WHERE set_code IS NULL AND name = ?', (group_name,))
+        row = cursor.fetchone()
+        if row:
+            group_id = row[0]
+        else:
+            cursor.execute('INSERT INTO collection_groups (name) VALUES (?)', (group_name,))
+            group_id = cursor.lastrowid
+
+        added = 0
+        for card_name, quantity in card_totals:
+            if card_name in missing_set:
+                continue
+            cursor.execute('''
+                SELECT id FROM cards WHERE name = ?
+                ORDER BY (image_uris IS NULL OR image_uris = ''), created_at DESC
+                LIMIT 1
+            ''', (card_name,))
+            card_row = cursor.fetchone()
+            if not card_row:
+                missing_set.add(card_name)
+                continue
+            card_id = card_row[0]
+
+            cursor.execute(
+                'SELECT id FROM user_collection WHERE group_id = ? AND card_id = ? AND is_foil = FALSE',
+                (group_id, card_id)
+            )
+            existing = cursor.fetchone()
+            if existing:
+                cursor.execute(
+                    'UPDATE user_collection SET quantity = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
+                    (quantity, existing[0])
+                )
+            else:
+                cursor.execute(
+                    'INSERT INTO user_collection (group_id, card_id, quantity, is_foil) VALUES (?, ?, ?, FALSE)',
+                    (group_id, card_id, quantity)
+                )
+            added += 1
+
+        conn.commit()
+        conn.close()
+
+        return jsonify({
+            'success': True,
+            'group_id': group_id,
+            'group_name': group_name,
+            'added': added,
+            'missing_cards': sorted(missing_set),
+            'message': f'Added {added} card(s) to "{group_name}"'
+        })
+    except Exception as e:
+        return jsonify({'success': False, 'message': f'Error adding deck to collection: {str(e)}'})
 
 @app.route('/deck/new')
 def deck_new():
@@ -1748,6 +2021,7 @@ def deck_new():
         'name': '',
         'description': '',
         'format': '',
+        'image_url': None,
         'created_at': '',
         'updated_at': '',
         'main_deck_text': '',
@@ -1764,17 +2038,17 @@ def deck_edit(deck_id):
         
         # Get deck info
         cursor.execute('''
-            SELECT id, name, description, format, created_at, updated_at
+            SELECT id, name, description, format, image_url, created_at, updated_at
             FROM decks
             WHERE id = ?
         ''', (deck_id,))
         deck = cursor.fetchone()
-        
+
         if not deck:
             return "Deck not found", 404
-        
-        deck_id, name, description, format_name, created_at, updated_at = deck
-        
+
+        deck_id, name, description, format_name, image_url, created_at, updated_at = deck
+
         # Get main deck cards
         cursor.execute('''
             SELECT card_name, quantity
@@ -1804,12 +2078,13 @@ def deck_edit(deck_id):
             'name': name,
             'description': description,
             'format': format_name,
+            'image_url': image_url,
             'created_at': created_at,
             'updated_at': updated_at,
             'main_deck_text': main_deck_text,
             'sideboard_text': sideboard_text
         }
-        
+
         return render_template('deck_edit.html', deck=deck_data)
         
     except Exception as e:
@@ -1834,6 +2109,34 @@ def validate_cards_in_database(card_names):
     except Exception as e:
         print(f"Error validating cards: {e}")
         return card_names  # Return all cards as missing if error
+
+def sync_missing_cards_from_scryfall(card_names):
+    """Try to fetch cards not yet in the local database from Scryfall and store them.
+
+    Returns the names that still couldn't be found (invalid names or Scryfall errors).
+    """
+    still_missing = []
+    for i in range(0, len(card_names), 75):
+        batch = card_names[i:i + 75]
+        try:
+            response = requests.post(
+                'https://api.scryfall.com/cards/collection',
+                json={'identifiers': [{'name': name} for name in batch]},
+                headers=SCRYFALL_HEADERS,
+                timeout=30,
+            )
+            response.raise_for_status()
+            result = response.json()
+
+            for card_data in result.get('data', []):
+                store_single_card(card_data)
+
+            still_missing.extend(item['name'] for item in result.get('not_found', []) if 'name' in item)
+        except Exception as e:
+            print(f"Error syncing cards from Scryfall: {e}")
+            still_missing.extend(batch)
+
+    return still_missing
 
 def parse_decklist_text(text):
     """Parse decklist text into card list"""
@@ -1867,55 +2170,66 @@ def parse_decklist_text(text):
 def update_deck():
     """Create or update a deck with validation"""
     try:
-        data = request.get_json()
-        deck_id = data.get('deck_id')
+        data = request.form
+        deck_id = data.get('deck_id') or None
+        deck_id = int(deck_id) if deck_id else None
         name = data.get('name', '').strip()
         description = data.get('description', '').strip()
         format_name = data.get('format', '').strip()
         main_deck_text = data.get('main_deck_text', '').strip()
         sideboard_text = data.get('sideboard_text', '').strip()
-        
+        image_url = (data.get('image_url') or '').strip() or None
+
         if not name:
             return jsonify({'success': False, 'message': 'Deck name is required'})
-        
+
         # Parse deck lists
         main_deck = parse_decklist_text(main_deck_text)
         sideboard = parse_decklist_text(sideboard_text)
-        
+
         # Get all unique card names for validation
         all_card_names = set()
         for card in main_deck + sideboard:
             all_card_names.add(card['name'])
-        
-        # Validate cards exist in database
+
+        # Validate cards exist in database, syncing any missing ones from Scryfall
         missing_cards = validate_cards_in_database(list(all_card_names))
         if missing_cards:
-            return jsonify({
-                'success': False, 
-                'message': f'Cards not found in database: {", ".join(missing_cards)}'
-            })
-        
+            missing_cards = sync_missing_cards_from_scryfall(missing_cards)
+
+        # Drop any cards that still can't be found
+        missing_set = set(missing_cards)
+        main_deck = [card for card in main_deck if card['name'] not in missing_set]
+        sideboard = [card for card in sideboard if card['name'] not in missing_set]
+
         conn = sqlite3.connect(DATABASE)
         cursor = conn.cursor()
-        
+
         if deck_id:
             # Update existing deck
             cursor.execute('''
-                UPDATE decks 
-                SET name = ?, description = ?, format = ?, updated_at = CURRENT_TIMESTAMP
+                UPDATE decks
+                SET name = ?, description = ?, format = ?, image_url = ?, updated_at = CURRENT_TIMESTAMP
                 WHERE id = ?
-            ''', (name, description, format_name, deck_id))
-            
+            ''', (name, description, format_name, image_url, deck_id))
+
             # Delete existing deck cards
             cursor.execute('DELETE FROM deck_cards WHERE deck_id = ?', (deck_id,))
         else:
             # Create new deck
             cursor.execute('''
-                INSERT INTO decks (name, description, format)
-                VALUES (?, ?, ?)
-            ''', (name, description, format_name))
+                INSERT INTO decks (name, description, format, image_url)
+                VALUES (?, ?, ?, ?)
+            ''', (name, description, format_name, image_url))
             deck_id = cursor.lastrowid
-        
+
+        upload = request.files.get('image_file')
+        if upload and upload.filename:
+            saved_url = save_deck_image(upload, deck_id, name)
+            if saved_url:
+                image_url = saved_url
+                cursor.execute('UPDATE decks SET image_url = ? WHERE id = ?', (image_url, deck_id))
+
         # Insert main deck cards
         for card in main_deck:
             cursor.execute('''
@@ -1934,7 +2248,12 @@ def update_deck():
         conn.close()
         
         action = 'updated' if data.get('deck_id') else 'created'
-        return jsonify({'success': True, 'message': f'Deck {action} successfully', 'deck_id': deck_id})
+        return jsonify({
+            'success': True,
+            'message': f'Deck {action} successfully',
+            'deck_id': deck_id,
+            'missing_cards': missing_cards
+        })
         
     except Exception as e:
         return jsonify({'success': False, 'message': f'Error saving deck: {str(e)}'})

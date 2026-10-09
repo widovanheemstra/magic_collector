@@ -20,6 +20,61 @@
             if (saved && themes[saved]) document.getElementById('appThemeStylesheet').href = themes[saved];
         })();
     </script>
+    <script>
+        /* ── Tile image picker (URL / server gallery / upload) ──────────────
+         * Used by both collection groups and decks. Defined in <head>,
+         * before the page content block, so it already exists when a page's
+         * own inline script calls it on a full load. */
+        function initTileImagePicker(prefix) {
+            const urlInput = document.getElementById(prefix + 'ImageUrl');
+            const fileInput = document.getElementById(prefix + 'ImageFile');
+            const galleryGrid = document.getElementById(prefix + 'ImageGallery');
+            const preview = document.getElementById(prefix + 'ImagePreview');
+            const previewWrap = document.getElementById(prefix + 'ImagePreviewWrap');
+            if (!urlInput || !fileInput || !galleryGrid) return;
+
+            function showPreview(src) {
+                if (!src) { previewWrap.style.display = 'none'; preview.src = ''; return; }
+                preview.src = src;
+                previewWrap.style.display = 'block';
+            }
+
+            urlInput.addEventListener('input', () => showPreview(urlInput.value.trim()));
+
+            fileInput.addEventListener('change', () => {
+                if (!fileInput.files.length) return;
+                urlInput.value = '';
+                const reader = new FileReader();
+                reader.onload = e => showPreview(e.target.result);
+                reader.readAsDataURL(fileInput.files[0]);
+            });
+
+            galleryGrid.addEventListener('click', (e) => {
+                const thumb = e.target.closest('[data-url]');
+                if (!thumb) return;
+                fileInput.value = '';
+                urlInput.value = thumb.dataset.url;
+                showPreview(thumb.dataset.url);
+            });
+
+            fetch('/api/tile_gallery_images')
+                .then(r => r.json())
+                .then(data => {
+                    if (!data.images || !data.images.length) {
+                        galleryGrid.innerHTML = '<p class="text-muted small mb-0">No images in the project gallery yet. Drop image files into <code>static/group_gallery/</code>.</p>';
+                        return;
+                    }
+                    galleryGrid.innerHTML = data.images.map(url =>
+                        `<img src="${url}" data-url="${url}" class="border rounded" style="width:96px;height:96px;object-fit:contain;cursor:pointer;padding:4px;">`
+                    ).join('');
+                })
+                .catch(err => {
+                    galleryGrid.innerHTML = `<p class="text-danger small mb-0">Could not load gallery images: ${err.message}</p>`;
+                });
+
+            showPreview(urlInput.value.trim());
+        }
+    </script>
     <style>
         .card-image {
             width: 100%;
@@ -105,6 +160,19 @@
             flex-shrink: 0;
             border: 1px solid rgba(255,255,255,.2);
         }
+
+        /* ── Collection group image gallery picker ─────────────────────── */
+        .group-gallery-grid {
+            max-height: 260px;
+            overflow-y: auto;
+            align-content: flex-start;
+        }
+        .group-gallery-grid img {
+            transition: border-color .15s;
+        }
+        .group-gallery-grid img:hover {
+            border-color: #0d6efd !important;
+        }
     </style>
 </head>
 <body>
@@ -121,6 +189,14 @@
                 <a class="nav-link" href="/sets">All Sets</a>
                 <a class="nav-link" href="/search">Search</a>
                 <a class="nav-link" href="/settings">Settings</a>
+            </div>
+
+            <!-- Currency picker -->
+            <div class="btn-group btn-group-sm ms-2" role="group" aria-label="Currency">
+                <a href="{{ url_for('set_currency', currency='USD') }}" data-no-spa
+                   class="btn btn-outline-light {% if currency == 'USD' %}active{% endif %}">USD ($)</a>
+                <a href="{{ url_for('set_currency', currency='EUR') }}" data-no-spa
+                   class="btn btn-outline-light {% if currency == 'EUR' %}active{% endif %}">EUR (€)</a>
             </div>
 
             <!-- Theme picker -->

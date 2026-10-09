@@ -45,7 +45,7 @@
         </div>
         {% if total_collection_value %}
         <div class="alert alert-success">
-            <h5 class="alert-heading mb-0"><i class="fas fa-dollar-sign"></i> Group Value: ${{ "%.2f"|format(total_collection_value) }}</h5>
+            <h5 class="alert-heading mb-0"><i class="fas fa-dollar-sign"></i> Group Value: {{ currency_symbol }}{{ "%.2f"|format(total_collection_value) }}</h5>
         </div>
         {% endif %}
     </div>
@@ -92,10 +92,10 @@
                         <span class="badge bg-{% if card[41] %}warning{% else %}primary{% endif %}" id="quantity-badge-{{ card[0] }}-{{ card[41] }}">
                             {{ card[40] }} {% if card[41] %}foil{% else %}regular{% endif %}
                         </span>
-                        {% if card[44] %}<span class="badge bg-success">${{ "%.2f"|format(card[44]) }}</span>{% endif %}
+                        {% if card[44] %}<span class="badge bg-success">{{ currency_symbol }}{{ "%.2f"|format(card[44]) }}</span>{% endif %}
                     </div>
                     {% if card[45] %}
-                    <div class="mb-2"><small class="text-success fw-bold">Total: ${{ "%.2f"|format(card[45]) }}</small></div>
+                    <div class="mb-2"><small class="text-success fw-bold">Total: {{ currency_symbol }}{{ "%.2f"|format(card[45]) }}</small></div>
                     {% endif %}
                     <div class="input-group input-group-sm" onclick="event.stopPropagation()">
                         <button class="btn btn-outline-secondary" type="button" onclick="adjust('{{ card[0] }}', {{ card[41]|lower }}, -1)"><i class="fas fa-minus"></i></button>
@@ -117,7 +117,7 @@
 
 <div class="modal fade" id="editGroupModal" tabindex="-1">
   <div class="modal-dialog">
-    <form class="modal-content" method="POST" action="{{ url_for('update_collection_group', group_id=group.id) }}">
+    <form class="modal-content" method="POST" action="{{ url_for('update_collection_group', group_id=group.id) }}" enctype="multipart/form-data">
       <div class="modal-header">
         <h5 class="modal-title">Edit Group</h5>
         <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
@@ -128,9 +128,30 @@
           <input type="text" name="name" class="form-control" value="{{ group.name }}" required>
         </div>
         <div class="mb-3">
-          <label class="form-label">Image URL (override)</label>
-          <input type="url" name="image_url" class="form-control" value="{{ group.image_url or '' }}" placeholder="https://...">
-          <div class="form-text">Leave blank to use the auto-default (set icon for set groups).</div>
+          <label class="form-label">Image (override)</label>
+          <ul class="nav nav-tabs nav-fill" role="tablist">
+            <li class="nav-item"><button class="nav-link active" data-bs-toggle="tab" data-bs-target="#editImgUrlPane" type="button">URL</button></li>
+            <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#editImgGalleryPane" type="button">Choose from Server</button></li>
+            <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#editImgUploadPane" type="button">Upload</button></li>
+          </ul>
+          <div class="tab-content border border-top-0 rounded-bottom p-3">
+            <div class="tab-pane fade show active" id="editImgUrlPane">
+              <input type="text" name="image_url" id="editImageUrl" class="form-control" value="{{ group.image_url or '' }}" placeholder="https://...">
+              <div class="form-text">Leave blank to use the auto-default (set icon for set groups).</div>
+            </div>
+            <div class="tab-pane fade" id="editImgGalleryPane">
+              <div id="editImageGallery" class="d-flex flex-wrap gap-2 group-gallery-grid">
+                <p class="text-muted small mb-0">Loading…</p>
+              </div>
+            </div>
+            <div class="tab-pane fade" id="editImgUploadPane">
+              <input type="file" name="image_file" id="editImageFile" class="form-control" accept=".jpg,.jpeg,.png,.gif,.webp,.svg">
+              <div class="form-text">Accepted formats: JPG, GIF, WEBP, PNG, SVG. Replaces any current image.</div>
+            </div>
+          </div>
+          <div class="mt-2" id="editImagePreviewWrap" style="{% if not group.image_url %}display:none;{% endif %}">
+            <img id="editImagePreview" src="{{ group.image_url or '' }}" style="max-height:80px;max-width:160px;object-fit:contain;" class="border rounded p-1">
+          </div>
         </div>
       </div>
       <div class="modal-footer">
@@ -164,6 +185,8 @@ input[type=number].no-spinner {
 </style>
 
 <script>
+initTileImagePicker('edit');
+
 function filterCards() {
     const q = document.getElementById('cardSearch').value.trim().toLowerCase();
     let shown = 0;

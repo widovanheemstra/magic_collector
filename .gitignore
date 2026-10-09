@@ -10,4 +10,8 @@ venv/
 __pycache__/
 .vscode/
 .opencode/
+static/group_images/*
+!static/group_images/.gitkeep
+static/deck_images/*
+!static/deck_images/.gitkeep
 
