@@ -1089,3 +1089,98 @@ svg.lucide { stroke-width: 1.5; vertical-align: middle; flex: none; }
 
 .mc-settings-danger { border-color: color-mix(in srgb, #b4554f 55%, transparent); }
 .mc-settings-danger .mc-h2 { color: #b4554f; }
+
+/* ── Home overview (1a/1l) ────────────────────────────────────────────── */
+
+.mc-home-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 12px;
+  max-width: 1240px;
+}
+.mc-home-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 14px 16px;
+  background: var(--sf);
+  border: 1px solid var(--ln);
+  text-decoration: none;
+  color: var(--mu);
+  font-size: 12.5px;
+}
+.mc-home-stat:hover { border-color: var(--ac); color: var(--mu); }
+.mc-home-stat .mc-stat-num { font-size: 28px; }
+
+.mc-home-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 16px 0 4px;
+}
+
+.mc-home-cols {
+  display: grid;
+  grid-template-columns: minmax(220px, 0.8fr) 1.4fr 1fr;
+  gap: 16px;
+  align-items: start;
+  max-width: 1240px;
+}
+@media (max-width: 1023.98px) { .mc-home-cols { grid-template-columns: 1fr; } }
+.mc-home-panel {
+  border: 1px solid var(--ln);
+  background: var(--bg);
+  padding: 16px 18px;
+}
+.mc-home-panel .mc-h2 { margin: 0 0 10px; font-size: 16px; }
+
+.mc-home-binder {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  margin: 0 -6px;
+  border: 1px solid transparent;
+  color: var(--fg);
+  text-decoration: none;
+}
+.mc-home-binder:hover { background: var(--sf); border-color: var(--ln); }
+.mc-home-binder > i { color: var(--act); flex: none; }
+.mc-home-binder-name { flex: 1; font-weight: 500; }
+
+.mc-home-recent {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(58px, 1fr));
+  gap: 8px;
+}
+.mc-recent-card { display: block; }
+.mc-recent-card img {
+  width: 100%;
+  aspect-ratio: 63 / 88;
+  object-fit: cover;
+  border-radius: 4.5%;
+  display: block;
+}
+.mc-recent-fallback {
+  display: grid;
+  place-items: center;
+  aspect-ratio: 63 / 88;
+  background: var(--sf);
+  border: 1px solid var(--ln);
+  color: var(--mu);
+  font-family: var(--font-heading);
+  font-size: 22px;
+}
+
+.mc-home-sets { list-style: none; margin: 0; padding: 0; }
+.mc-home-sets li + li { border-top: 1px solid var(--ln); }
+.mc-home-sets a {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 4px;
+  color: var(--fg);
+  text-decoration: none;
+}
+.mc-home-sets a:hover { background: var(--sf); }
+.mc-home-set-name { flex: 1; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }

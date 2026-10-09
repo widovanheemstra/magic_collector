@@ -1029,23 +1029,60 @@ def favicon():
 
 @app.route('/')
 def index():
-    """Main page with sets overview"""
+    """Home overview: collection stats, binders, recent additions and recent sets."""
+    currency = get_currency()
     conn = sqlite3.connect(DATABASE)
     cursor = conn.cursor()
-    cursor.execute('SELECT * FROM sets ORDER BY released_at DESC')
-    sets = cursor.fetchall()
-    
-    # Get total cards count
-    cursor.execute('SELECT COUNT(*) FROM cards')
-    total_cards = cursor.fetchone()[0]
-    
-    # Get cards in collection count
-    cursor.execute('SELECT COUNT(*) FROM user_collection')
-    cards_in_collection = cursor.fetchone()[0]
-    
-    conn.close()
-    
-    return render_template('index.html', sets=sets, total_cards=total_cards, cards_in_collection=cards_in_collection)
+    try:
+        cursor.execute('SELECT COALESCE(SUM(quantity), 0) FROM user_collection')
+        total_cards = cursor.fetchone()[0]
+        cursor.execute('SELECT COUNT(DISTINCT card_id) FROM user_collection')
+        total_unique = cursor.fetchone()[0]
+        cursor.execute('SELECT COUNT(*) FROM decks')
+        deck_count = cursor.fetchone()[0]
+        cursor.execute('SELECT COUNT(*) FROM cards')
+        db_cards = cursor.fetchone()[0]
+
+        # Collection value across every binder and both finishes.
+        total_value = 0.0
+        cursor.execute('''
+            SELECT c.prices, uc.is_foil, SUM(uc.quantity)
+            FROM user_collection uc JOIN cards c ON c.id = uc.card_id
+            GROUP BY uc.card_id, uc.is_foil
+        ''')
+        for prices, is_foil, qty in cursor.fetchall():
+            price = price_from_json(prices, bool(is_foil), currency)
+            if price:
+                total_value += price * qty
+
+        # Most recent additions (keeps the visual commit order stable).
+        cursor.execute('''
+            SELECT c.*, uc.updated_at FROM user_collection uc
+            JOIN cards c ON c.id = uc.card_id
+            ORDER BY uc.updated_at DESC, uc.id DESC
+            LIMIT 8
+        ''')
+        recent_rows = cursor.fetchall()
+        recent_cards = [card_dict_from_row(r, 0, 0, currency) for r in recent_rows]
+
+        cursor.execute('''
+            SELECT s.code, s.name, s.released_at, s.icon_svg_uri,
+                   (SELECT COUNT(*) FROM cards c WHERE c.set_code = s.code) AS synced_count
+            FROM sets s
+            ORDER BY s.released_at DESC, s.name
+            LIMIT 6
+        ''')
+        recent_sets = [{
+            'code': code, 'name': name, 'released_at': released_at,
+            'icon_svg_uri': icon_svg_uri, 'synced_count': synced_count,
+        } for code, name, released_at, icon_svg_uri, synced_count in cursor.fetchall()]
+    finally:
+        conn.close()
+
+    return render_template('index.html', total_cards=total_cards,
+                           total_unique=total_unique, deck_count=deck_count,
+                           db_cards=db_cards, total_value=total_value,
+                           recent_cards=recent_cards, recent_sets=recent_sets)
 
 @app.route('/sets')
 def view_sets():
