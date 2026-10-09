@@ -973,3 +973,68 @@ svg.lucide { stroke-width: 1.5; vertical-align: middle; flex: none; }
 .mc-bulk-row.is-bad { color: #b4554f; }
 .mc-bulk-label { font-weight: 500; }
 .mc-bulk-meta { color: var(--mu); font-size: 12px; }
+
+/* ── Advanced search (1i) ─────────────────────────────────────────────── */
+
+.mc-search-form { margin-bottom: 4px; }
+.mc-search-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  border: 1px solid var(--ln);
+  padding: 8px 12px;
+  margin-bottom: 12px;
+}
+.mc-search-bar:focus-within { border-color: var(--ac); }
+.mc-search-bar > i { color: var(--mu); flex: none; }
+.mc-search-bar input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--fg);
+  font-size: 15px;
+  font-family: inherit;
+}
+.mc-search-filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 14px;
+  padding: 10px 0 2px;
+}
+.mc-search-filters .mc-select { width: auto; max-width: 210px; }
+.mc-color-picker { display: inline-flex; align-items: center; gap: 2px; }
+.mc-color-picker .mc-check { gap: 3px; }
+.mc-color-picker .mc-check input { display: none; }
+.mc-color-picker .mc-check img { width: 18px; height: 18px; opacity: 0.45; }
+.mc-color-picker .mc-check input:checked + img { opacity: 1; }
+.mc-label-pair { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--mu); }
+.mc-label-pair .mc-input { padding: 4px 6px; }
+
+.mc-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin: 26px 0 10px;
+}
+.mc-btn.is-disabled { opacity: 0.45; pointer-events: none; }
+.mc-pagination-page { display: inline-flex; align-items: center; gap: 2px; font-size: 13.5px; }
+.mc-pagination-page a {
+  min-width: 28px;
+  text-align: center;
+  padding: 5px 7px;
+  border: 1px solid transparent;
+  color: var(--act);
+  text-decoration: none;
+}
+.mc-pagination-page a:hover { border-color: var(--ln); background: var(--sf); }
+.mc-pagination-page strong.is-active {
+  min-width: 28px;
+  text-align: center;
+  padding: 5px 7px;
+  background: var(--tint);
+  color: var(--act);
+}

@@ -5,6 +5,7 @@ import re
 import requests
 import os
 from flask import Flask, render_template, request, jsonify, redirect, url_for, Response, stream_with_context
+from urllib.parse import urlencode
 from dotenv import load_dotenv
 
 # Load environment variables from .env file
@@ -1702,56 +1703,243 @@ def make_deck_from_group(group_id):
     conn.close()
     return redirect(url_for('deck_view', deck_id=deck_id))
 
+_ES_STATE = {'client': None, 'index': None, 'checked': 0.0}
+
+def es_search_backend():
+    """Return (client, index) when Elasticsearch is reachable, else (None, None).
+
+    Availability is cached for 60 seconds so /search doesn't ping ES on every request;
+    a local Elasticsearch cluster is optional (see create_elk_index.py / load_bulk_cards_to_elk.py).
+    """
+    if time.time() - _ES_STATE['checked'] < 60:
+        return _ES_STATE['client'], _ES_STATE['index']
+    client = None
+    index = None
+    try:
+        import elasticsearch
+        host = os.getenv('ELASTICSEARCH_HOST', 'localhost')
+        port = int(os.getenv('ELASTICSEARCH_PORT', 9200))
+        index = os.getenv('ELASTICSEARCH_INDEX', 'mtg_cards')
+        user = os.getenv('ELASTICSEARCH_USER')
+        password = os.getenv('ELASTICSEARCH_PASSWORD')
+        use_ssl = os.getenv('ELASTICSEARCH_USE_SSL', 'false').lower() == 'true'
+        verify_certs = os.getenv('ELASTICSEARCH_VERIFY_CERTS', 'true').lower() == 'true'
+        protocol = 'https' if use_ssl else 'http'
+        cfg = {'hosts': [f'{protocol}://{host}:{port}'], 'request_timeout': 3,
+               'max_retries': 1, 'retry_on_timeout': False}
+        if user and password:
+            cfg['basic_auth'] = (user, password)
+        if use_ssl and not verify_certs:
+            cfg['verify_certs'] = False
+            cfg['ssl_show_warn'] = False
+        candidate = elasticsearch.Elasticsearch(**cfg)
+        if candidate.ping():
+            client = candidate
+        else:
+            index = None
+    except Exception as exc:
+        print(f'[search] Elasticsearch unavailable: {exc}')
+        index = None
+    _ES_STATE['client'] = client
+    _ES_STATE['index'] = index if client else None
+    _ES_STATE['checked'] = time.time()
+    return _ES_STATE['client'], _ES_STATE['index']
+
+
 @app.route('/search')
 def search_cards():
-    """Search cards page"""
+    """Advanced search: free text + filters, powered by Elasticsearch when it is
+    reachable and by SQLite otherwise. The `owned` filter forces SQLite because it
+    only applies to cards already in the local collection."""
     query = request.args.get('q', '').strip()
-    page = request.args.get('page', 1, type=int)
-    per_page = 20
-    
+    set_code = (request.args.get('set') or '').strip().upper()
+    rarity = (request.args.get('rarity') or '').strip().lower()
+    cmc_raw = (request.args.get('cmc') or '').strip()
+    price_min_raw = (request.args.get('price_min') or '').strip()
+    price_max_raw = (request.args.get('price_max') or '').strip()
+    owned = request.args.get('owned') == '1'
+    raw_colors = request.args.getlist('colors')
+    if not raw_colors and request.args.get('colors'):
+        raw_colors = request.args['colors'].replace(',', ' ').split()
+    colors = [c.upper() for c in raw_colors if c.upper() in 'WUBRG']
+    page = max(1, request.args.get('page', 1, type=int))
+    per_page = 60
+
+    try:
+        cmc = float(cmc_raw) if cmc_raw else None
+    except ValueError:
+        cmc = None
+    try:
+        price_min = float(price_min_raw) if price_min_raw else None
+    except ValueError:
+        price_min = None
+    try:
+        price_max = float(price_max_raw) if price_max_raw else None
+    except ValueError:
+        price_max = None
+
+    currency = get_currency()
+    price_key = 'eur' if currency == 'EUR' else 'usd'
+    price_foil_key = f'{price_key}_foil'
+
+    # Keep filter state for pagination links.
+    def filters_qs(**overrides):
+        base = {'q': query, 'set': set_code, 'rarity': rarity,
+                'colors': ','.join(colors), 'cmc': cmc_raw,
+                'price_min': price_min_raw, 'price_max': price_max_raw,
+                'owned': '1' if owned else ''}
+        base.update({k: v for k, v in overrides.items() if v is not None})
+        return urlencode({k: v for k, v in base.items() if v not in (None, '')})
+
     results = []
     total_results = 0
-    total_pages = 0
-    
-    if query:
+    engine = 'SQLite'
+
+    use_es_client, es_index = es_search_backend()
+    if use_es_client and not owned:
+        try:
+            must = []
+            if query:
+                must.append({'multi_match': {'query': query, 'fields': ['name^3', 'type_line', 'oracle_text']}})
+            if set_code:
+                must.append({'term': {'set_code': set_code}})
+            if rarity:
+                must.append({'term': {'rarity': rarity}})
+            if cmc is not None:
+                must.append({'term': {'cmc': cmc}})
+            for color in colors:
+                must.append({'term': {'color_identity': color}})
+            if price_min is not None or price_max is not None:
+                rng = {}
+                if price_min is not None:
+                    rng['gte'] = price_min
+                if price_max is not None:
+                    rng['lte'] = price_max
+                must.append({'range': {f'prices.{price_key}': rng}})
+
+            body = {'query': {'bool': {'must': must}} if must else {'match_all': {}},
+                    'from': (page - 1) * per_page, 'size': per_page}
+            if not query:
+                body['sort'] = [{'name.keyword': {'order': 'asc'}}]
+
+            resp = use_es_client.search(index=es_index, body=body)
+            total_results = int(resp['hits']['total']['value'])
+            hits = resp['hits']['hits']
+
+            # Owned quantities for the returned ids, from SQLite.
+            ids = [h['_source'].get('id') for h in hits if h.get('_source', {}).get('id')]
+            qty_map = {}
+            if ids:
+                ph = ','.join('?' for _ in ids)
+                conn = sqlite3.connect(DATABASE)
+                cur = conn.cursor()
+                cur.execute(
+                    f'SELECT card_id, is_foil, SUM(quantity) FROM user_collection '
+                    f'WHERE card_id IN ({ph}) GROUP BY card_id, is_foil', ids)
+                for cid, is_foil, qty in cur.fetchall():
+                    key = (cid, is_foil)
+                    qty_map[key] = qty
+                conn.close()
+
+            for h in hits:
+                s = h['_source']
+                prices = s.get('prices') or {}
+                price = prices.get(price_key)
+                price_foil = prices.get(price_foil_key)
+                nf = qty_map.get((s.get('id'), 0), 0)
+                f = qty_map.get((s.get('id'), 1), 0)
+                es_img = s.get('image_uris') or {}
+                img_dict = es_img if any(es_img.get(k) for k in ('small', 'normal', 'large')) else None
+                results.append({
+                    'id': s.get('id'), 'name': s.get('name', ''),
+                    'mana_cost': s.get('mana_cost'), 'cmc': s.get('cmc'),
+                    'type_line': s.get('type_line', ''), 'oracle_text': s.get('oracle_text', ''),
+                    'power': s.get('power'), 'toughness': s.get('toughness'),
+                    'rarity': s.get('rarity'), 'collector_number': s.get('collector_number'),
+                    'set_code': s.get('set_code'), 'set_name': s.get('set_name'),
+                    'image_uris': img_dict,
+                    'card_faces': s.get('card_faces') or [],
+                    'qty_regular': nf, 'qty_foil': f,
+                    'price': price, 'price_foil': price_foil,
+                    'line_total': (price or 0) * nf + (price_foil or 0) * f,
+                })
+            engine = 'Elasticsearch'
+        except Exception as exc:
+            print(f'[search] ES query failed, falling back to SQLite: {exc}')
+            results = []
+
+    # SQLite fallback (also used when `owned` is set or ES is unavailable).
+    if use_es_client and engine == 'Elasticsearch':
+        pass
+    else:
         conn = sqlite3.connect(DATABASE)
         cursor = conn.cursor()
-        
-        # Search in card name, type_line, and oracle_text
-        search_term = f'%{query}%'
-        
-        # Get total count
-        cursor.execute('''
-            SELECT COUNT(*) FROM cards 
-            WHERE name LIKE ? OR type_line LIKE ? OR oracle_text LIKE ?
-        ''', (search_term, search_term, search_term))
+
+        conds = []
+        params = []
+        if query:
+            like = f'%{query}%'
+            conds.append('(c.name LIKE ? OR c.type_line LIKE ? OR c.oracle_text LIKE ?)')
+            params += [like, like, like]
+        if set_code:
+            conds.append('c.set_code = ?')
+            params.append(set_code)
+        if rarity:
+            conds.append('c.rarity = ?')
+            params.append(rarity)
+        if cmc is not None:
+            conds.append('c.cmc = ?')
+            params.append(cmc)
+        for color in colors:
+            conds.append("c.color_identity LIKE ?")
+            params.append(f'%"{color}"%')
+        if owned:
+            conds.append('EXISTS (SELECT 1 FROM user_collection x WHERE x.card_id = c.id)')
+        if price_min is not None:
+            conds.append(f"json_extract(c.prices, '$.{price_key}') >= ?")
+            params.append(price_min)
+        if price_max is not None:
+            conds.append(f"json_extract(c.prices, '$.{price_key}') <= ?")
+            params.append(price_max)
+
+        where = ('WHERE ' + ' AND '.join(conds)) if conds else ''
+        cursor.execute(f'SELECT COUNT(*) FROM cards c {where}', params)
         total_results = cursor.fetchone()[0]
-        
-        # Get paginated results
+
         offset = (page - 1) * per_page
-        cursor.execute('''
-            SELECT c.id, c.name, c.mana_cost, c.type_line, c.oracle_text, c.power, c.toughness,
-                   c.rarity, c.set_code, c.collector_number, c.image_uris, c.prices,
-                   s.name as set_name, s.released_at
+        cursor.execute(f'''
+            SELECT c.*,
+                   COALESCE(SUM(CASE WHEN uc.is_foil = 0 THEN uc.quantity END), 0) AS nf,
+                   COALESCE(SUM(CASE WHEN uc.is_foil = 1 THEN uc.quantity END), 0) AS f
             FROM cards c
-            LEFT JOIN sets s ON c.set_code = s.code
-            WHERE c.name LIKE ? OR c.type_line LIKE ? OR c.oracle_text LIKE ?
-            ORDER BY c.name, s.released_at DESC
+            LEFT JOIN user_collection uc ON uc.card_id = c.id
+            {where}
+            GROUP BY c.id
+            ORDER BY c.name COLLATE NOCASE
             LIMIT ? OFFSET ?
-        ''', (search_term, search_term, search_term, per_page, offset))
-        results = cursor.fetchall()
-        
-        total_pages = (total_results + per_page - 1) // per_page
-        
+        ''', params + [per_page, offset])
+        rows = cursor.fetchall()
         conn.close()
-    
-    return render_template('search.html', 
-                         query=query, 
-                         results=results, 
-                         total_results=total_results,
-                         page=page, 
-                         per_page=per_page,
-                         total_pages=total_pages)
+        results = [card_dict_from_row(row, row[40], row[41], currency) for row in rows]
+
+    total_pages = max(1, (total_results + per_page - 1) // per_page) if total_results else 1
+    page = min(page, total_pages)
+
+    conn = sqlite3.connect(DATABASE)
+    cursor = conn.cursor()
+    cursor.execute('SELECT DISTINCT code, name FROM sets WHERE code IS NOT NULL ORDER BY name')
+    all_sets = [{'code': code, 'name': name} for code, name in cursor.fetchall()]
+    conn.close()
+
+    return render_template('search.html',
+                           query=query, results=results, total_results=total_results,
+                           page=page, per_page=per_page, total_pages=total_pages,
+                           engine=engine, all_sets=all_sets,
+                           filters=filters_qs,
+                           selected_set=set_code, selected_rarity=rarity,
+                           selected_colors=colors, cmc=cmc_raw,
+                           price_min=price_min_raw, price_max=price_max_raw,
+                           owned=owned)
 
 @app.route('/fetch_sets', methods=['POST'])
 def fetch_sets():
