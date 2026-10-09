@@ -136,7 +136,7 @@
 {% else %}
 <div class="mc-empty">
     <p class="mb-2">No cards in this binder yet.</p>
-    <button class="mc-btn mc-btn-primary" type="button" data-bs-toggle="modal" data-bs-target="#addCardsModal">
+    <button class="mc-btn mc-btn-primary" type="button" onclick="openAddCardsModal({{ group.id }})">
         <i data-lucide="plus" width="15" height="15"></i> Add cards
     </button>
 </div>

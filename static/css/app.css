@@ -946,3 +946,30 @@ svg.lucide { stroke-width: 1.5; vertical-align: middle; flex: none; }
 .mc-tag-outline { background: transparent; border-color: var(--ln); color: var(--mu); }
 .mc-tag-ok { background: color-mix(in srgb, #3f8f5c 14%, transparent); color: #3f8f5c; }
 .mc-tag-danger { background: color-mix(in srgb, #b4554f 12%, transparent); color: #b4554f; }
+
+/* ── Bulk add modal preview ───────────────────────────────────────────── */
+
+.mc-check { display: flex; align-items: center; gap: 8px; font-size: 13px; cursor: pointer; }
+
+.mc-bulk-preview { border: 1px solid var(--ln); margin-top: 4px; }
+.mc-bulk-preview-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--ln);
+  background: var(--sf);
+}
+.mc-bulk-rows { list-style: none; margin: 0; padding: 0; max-height: 220px; overflow-y: auto; }
+.mc-bulk-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 12px;
+  font-size: 13px;
+}
+.mc-bulk-row + .mc-bulk-row { border-top: 1px solid var(--ln); }
+.mc-bulk-row .mc-icobtn { margin-left: auto; }
+.mc-bulk-row.is-bad { color: #b4554f; }
+.mc-bulk-label { font-weight: 500; }
+.mc-bulk-meta { color: var(--mu); font-size: 12px; }

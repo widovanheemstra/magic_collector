@@ -2746,6 +2746,138 @@ def parse_decklist_text(text):
     
     return cards
 
+BULK_ADD_QTY_RE = re.compile(r'^(\d+)\s+(.*)$')
+
+
+def parse_bulk_add_line(line):
+    """Parse one Bulk Add line: '[qty] Name [(SET)] [number] [*F*]'.
+
+    Returns None for blank/comment lines, else a dict with quantity, name_part,
+    set_code, collector_number and is_foil.
+    """
+    line = (line or '').strip()
+    if not line or line.startswith('#'):
+        return None
+    is_foil = '*F*' in line
+    line = line.replace('*F*', '').strip()
+
+    quantity = 1
+    m = BULK_ADD_QTY_RE.match(line)
+    if m:
+        qty = int(m.group(1))
+        if qty <= 0:
+            return None
+        quantity = qty
+        line = m.group(2).strip()
+
+    set_code = None
+    number = None
+    m = re.match(r'^(.*)\s+\(([A-Za-z0-9]+)\)\s*([0-9]*)\s*$', line)
+    if m and m.group(1).strip():
+        name_part = m.group(1).strip()
+        set_code = m.group(2).upper()
+        number = m.group(3) or None
+    else:
+        name_part = line
+    if not name_part or not re.search(r'[A-Za-z]', name_part):
+        return None
+    return {'quantity': quantity, 'name_part': name_part,
+            'set_code': set_code, 'collector_number': number, 'is_foil': is_foil}
+
+
+def resolve_bulk_add_card(name_part, set_code=None, collector_number=None):
+    """Resolve a parsed bulk-add line fragment to the best matching card row."""
+    conn = sqlite3.connect(DATABASE)
+    cursor = conn.cursor()
+    if set_code and collector_number:
+        cursor.execute('''
+            SELECT id, name, set_code FROM cards
+            WHERE name = ? COLLATE NOCASE AND set_code = ? AND collector_number = ?
+            LIMIT 1
+        ''', (name_part, set_code, collector_number))
+    elif set_code:
+        cursor.execute('''
+            SELECT id, name, set_code FROM cards
+            WHERE name = ? COLLATE NOCASE AND set_code = ?
+            ORDER BY (image_uris IS NULL OR image_uris = ''), created_at DESC
+            LIMIT 1
+        ''', (name_part, set_code))
+    else:
+        cursor.execute('''
+            SELECT id, name, set_code FROM cards
+            WHERE name = ? COLLATE NOCASE
+            ORDER BY (image_uris IS NULL OR image_uris = ''), created_at DESC
+            LIMIT 1
+        ''', (name_part,))
+    row = cursor.fetchone()
+    conn.close()
+    return row
+
+
+@app.route('/api/resolve_cards', methods=['POST'])
+def resolve_cards_api():
+    """Parse + resolve Bulk Add lines into a preview list for the add-cards modal."""
+    data = request.get_json() or {}
+    lines = data.get('lines') or []
+    force_foil = bool(data.get('force_foil'))
+    rows = []
+    for line in lines:
+        parsed = parse_bulk_add_line(line)
+        if parsed is None:
+            continue
+        is_foil = parsed['is_foil'] or force_foil
+        card = resolve_bulk_add_card(parsed['name_part'], parsed['set_code'],
+                                     parsed['collector_number'])
+        note = None
+        if not card and parsed['set_code']:
+            card = resolve_bulk_add_card(parsed['name_part'])
+            if card:
+                note = f'Printing ({parsed["set_code"]}) not found locally; matched {card[2]} instead'
+        if not card:
+            rows.append({'ok': False, 'line': line.strip(), 'quantity': parsed['quantity'],
+                         'is_foil': is_foil, 'message': 'Not found',
+                         'name_part': parsed['name_part']})
+            continue
+        rows.append({'ok': True, 'line': line.strip(), 'card_id': card[0],
+                     'name': card[1], 'set_code': card[2],
+                     'quantity': parsed['quantity'], 'is_foil': is_foil,
+                     'note': note})
+    total = sum(r['quantity'] for r in rows if r['ok'])
+    return jsonify({'success': True, 'rows': rows, 'total': total})
+
+
+@app.route('/bulk_add', methods=['POST'])
+def bulk_add_route():
+    """Add resolved cards to a binder (additive; merges into existing rows)."""
+    data = request.get_json() or {}
+    group_id = data.get('group_id')
+    cards = data.get('cards') or []
+    if group_id is None:
+        return jsonify({'success': False, 'message': 'No target binder selected'})
+    conn = sqlite3.connect(DATABASE)
+    if not conn.execute('SELECT 1 FROM collection_groups WHERE id = ?', (group_id,)).fetchone():
+        conn.close()
+        return jsonify({'success': False, 'message': 'Binder not found'}), 404
+    conn.close()
+
+    added = 0
+    for item in cards:
+        card_id = item.get('card_id')
+        qty = int(item.get('quantity', 1))
+        is_foil = bool(item.get('is_foil', False))
+        if not card_id or qty <= 0:
+            continue
+        conn = sqlite3.connect(DATABASE)
+        row = conn.execute(
+            'SELECT quantity FROM user_collection WHERE card_id = ? AND is_foil = ? AND group_id = ?',
+            (card_id, is_foil, group_id)).fetchone()
+        conn.close()
+        current = row[0] if row else 0
+        update_collection_quantity(card_id, current + qty, is_foil, group_id)
+        added += 1
+    return jsonify({'success': True, 'added': added,
+                    'message': f'Added {added} card{"s" if added != 1 else ""}'})
+
 @app.route('/update_deck', methods=['POST'])
 def update_deck():
     """Create or update a deck with validation"""

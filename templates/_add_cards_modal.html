@@ -7,12 +7,24 @@
                 <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
             <div class="modal-body">
-                <p class="mc-muted small mb-3">
-                    One card per line. Quantity, set code, number and <code>*F*</code> for foil are optional.
-                </p>
+                <div class="mb-3">
+                    <label class="mc-label d-block mb-1" for="addCardsQuick">Quick add</label>
+                    <div class="d-flex gap-2">
+                        <input type="text" id="addCardsQuick" class="mc-input" style="flex:1;"
+                               placeholder="Card name…" autocomplete="off">
+                        <button type="button" class="mc-btn mc-btn-primary" id="addCardsQuickBtn">Add</button>
+                    </div>
+                </div>
+
+                <label class="mc-label d-block mb-1" for="addCardsText">Or paste a list</label>
                 <textarea id="addCardsText" class="mc-textarea" rows="8"
                           placeholder="4 Lightning Bolt&#10;2 Sol Ring (CMM)&#10;1 Counterspell *F*&#10;3 Heartless Act (TLA) 82"></textarea>
-                <div class="row g-3 mt-1">
+                <p class="mc-muted small mt-1 mb-2">
+                    One card per line: <code>[qty] Name [(SET)] [number] [*F*]</code>. <code>*F*</code>
+                    marks foil. Lines you can't find locally are skipped unless marked otherwise.
+                </p>
+
+                <div class="row g-3 mb-3">
                     <div class="col-md-6">
                         <label class="mc-label d-block mb-1" for="addCardsGroup">Add to binder</label>
                         <select id="addCardsGroup" class="mc-select">
@@ -31,6 +43,16 @@
                         </label>
                     </div>
                 </div>
+
+                <div id="addCardsPreview" class="mc-bulk-preview" hidden>
+                    <div class="mc-bulk-preview-head">
+                        <span class="mc-label" id="addCardsPreviewTitle">Parsed lines</span>
+                        <button type="button" class="mc-icobtn" id="addCardsClear" title="Clear list">
+                            <i data-lucide="trash-2" width="14" height="14"></i>
+                        </button>
+                    </div>
+                    <ul class="mc-bulk-rows" id="addCardsRows"></ul>
+                </div>
             </div>
             <div class="modal-footer border-0">
                 <button type="button" class="mc-btn mc-btn-secondary" data-bs-dismiss="modal">Cancel</button>
@@ -39,3 +61,152 @@
         </div>
     </div>
 </div>
+
+<script>
+/* Server-side parse + resolve; see /api/resolve_cards and /bulk_add. */
+let bulkRows = [];
+let bulkTimer = null;
+
+function openAddCardsModal(groupId) {
+    if (groupId) {
+        const sel = document.getElementById('addCardsGroup');
+        const opt = sel.querySelector('option[value="' + groupId + '"]');
+        if (opt) sel.value = groupId;
+        else {
+            const o = document.createElement('option');
+            o.value = groupId;
+            o.textContent = 'Current binder';
+            sel.appendChild(o);
+            sel.value = groupId;
+        }
+    }
+    const modal = bootstrap.Modal.getOrCreateInstance(document.getElementById('addCardsModal'));
+    modal.show();
+    const input = document.getElementById('addCardsText');
+    if (input.value.trim()) scheduleParse();
+}
+
+function scheduleParse() {
+    clearTimeout(bulkTimer);
+    bulkTimer = setTimeout(parseBulkText, 500);
+}
+
+function parseBulkText() {
+    const text = document.getElementById('addCardsText').value;
+    const forceFoil = document.getElementById('addCardsFoil').checked;
+    const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
+    if (!lines.length) {
+        bulkRows = [];
+        renderBulkPreview();
+        return;
+    }
+    fetch('/api/resolve_cards', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({lines: lines, force_foil: forceFoil})
+    }).then(r => r.json()).then(d => {
+        if (!d.success) { return; }
+        bulkRows = d.rows;
+        renderBulkPreview();
+    }).catch(() => {});
+}
+
+function renderBulkPreview() {
+    const box = document.getElementById('addCardsPreview');
+    const list = document.getElementById('addCardsRows');
+    const okRows = bulkRows.filter(r => r.ok);
+    list.innerHTML = '';
+    bulkRows.forEach((row, i) => {
+        const li = document.createElement('li');
+        li.className = 'mc-bulk-row' + (row.ok ? '' : ' is-bad');
+        const label = document.createElement('span');
+        label.className = 'mc-bulk-label';
+        label.textContent = row.ok
+            ? row.name + ' (' + row.set_code + ')'
+            : (row.name_part || row.line);
+        const meta = document.createElement('span');
+        meta.className = 'mc-bulk-meta';
+        meta.textContent = row.quantity + '×' + (row.is_foil ? ' ★F' : '') +
+            (row.ok ? '' : ' · ' + row.message);
+        li.appendChild(label);
+        li.appendChild(meta);
+        const del = document.createElement('button');
+        del.type = 'button';
+        del.className = 'mc-icobtn';
+        del.innerHTML = '<i data-lucide="x" width="13" height="13"></i>';
+        del.addEventListener('click', () => {
+            bulkRows.splice(i, 1);
+            renderBulkPreview();
+        });
+        li.appendChild(del);
+        list.appendChild(li);
+    });
+    if (bulkRows.length) renderLucideIcons();
+    box.hidden = !bulkRows.length;
+    const submit = document.getElementById('addCardsSubmit');
+    submit.disabled = !okRows.length;
+    submit.textContent = okRows.length ? 'Add ' + okRows.reduce((s, r) => s + r.quantity, 0) + ' cards' : 'Add cards';
+    const title = document.getElementById('addCardsPreviewTitle');
+    if (title) title.textContent = okRows.length + ' of ' + bulkRows.length + ' lines found';
+}
+
+function submitBulkAdd() {
+    const okRows = bulkRows.filter(r => r.ok);
+    if (!okRows.length) return;
+    const submit = document.getElementById('addCardsSubmit');
+    submit.disabled = true;
+    fetch('/bulk_add', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({
+            group_id: document.getElementById('addCardsGroup').value,
+            cards: okRows.map(r => ({card_id: r.card_id, quantity: r.quantity, is_foil: r.is_foil}))
+        })
+    }).then(r => r.json()).then(d => {
+        if (d.success) {
+            const modal = bootstrap.Modal.getInstance(document.getElementById('addCardsModal'));
+            if (modal) modal.hide();
+            window.location.reload();
+        } else {
+            alert(d.message);
+            submit.disabled = false;
+        }
+    }).catch(() => { submit.disabled = false; alert('Add failed'); });
+}
+
+document.getElementById('addCardsText').addEventListener('input', scheduleParse);
+document.getElementById('addCardsFoil').addEventListener('change', () => {
+    if (document.getElementById('addCardsText').value.trim()) parseBulkText();
+});
+document.getElementById('addCardsSubmit').addEventListener('click', submitBulkAdd);
+document.getElementById('addCardsClear').addEventListener('click', () => {
+    bulkRows = [];
+    document.getElementById('addCardsText').value = '';
+    renderBulkPreview();
+});
+
+/* Quick add: resolve one line and stash it in the parsed list. */
+document.getElementById('addCardsQuickBtn').addEventListener('click', quickAddCard);
+document.getElementById('addCardsQuick').addEventListener('keydown', e => {
+    if (e.key === 'Enter') { e.preventDefault(); quickAddCard(); }
+});
+
+function quickAddCard() {
+    const name = document.getElementById('addCardsQuick').value.trim();
+    if (!name) return;
+    const btn = document.getElementById('addCardsQuickBtn');
+    btn.disabled = true;
+    fetch('/api/resolve_cards', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({lines: ['1 ' + name], force_foil: false})
+    }).then(r => r.json()).then(d => {
+        btn.disabled = false;
+        const row = (d.rows || [])[0];
+        if (!row || !row.ok) { alert('"' + name + '" not found'); return; }
+        document.getElementById('addCardsQuick').value = '';
+        bulkRows.push(row);
+        renderBulkPreview();
+    }).catch(() => { btn.disabled = false; });
+}
+</script>
