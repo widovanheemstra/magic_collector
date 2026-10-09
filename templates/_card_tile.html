@@ -4,13 +4,22 @@
 {% if not img and card.card_faces and card.card_faces[0].image_uris %}
     {% set img = card.card_faces[0].image_uris.normal or card.card_faces[0].image_uris.large %}
 {% endif %}
+{% set pv_type = (card.card_faces[0].type_line if (card.card_faces and card.card_faces[0]) else card.type_line) or '' %}
+{% set pv_set = ((card.set_name or card.set_code) ~ ' · ' ~ card.set_code) if card.set_code else '' %}
 
 <div class="mc-card-tile" data-card-id="{{ card.id }}"
      data-price-nf="{{ '%.2f'|format(card.price or 0) }}"
      data-price-f="{{ '%.2f'|format(card.price_foil or 0) }}"
      data-filter-name="{{ card.name|lower }}">
     <div class="mc-card-frame">
-        <a class="mc-card-link" href="{{ link_url }}" {% if img %}data-preview-src="{{ img }}"{% endif %}>
+        <a class="mc-card-link" href="{{ link_url }}"
+           {% if img %}data-preview-src="{{ img }}"{% endif %}
+           data-preview-name="{{ card.name or '' }}"
+           data-preview-type="{{ pv_type }}"
+           data-preview-set="{{ pv_set }}"
+           data-preview-rar="{{ card.rarity or '' }}"
+           data-preview-num="{{ card.collector_number or '' }}"
+           data-preview-price="{{ (currency_symbol ~ '%.2f'|format(card.price)) if card.price else '' }}">
             {% if img %}
             <img class="mc-img-card" src="{{ img }}" alt="{{ card.name }}" loading="lazy">
             {% else %}

@@ -22,15 +22,6 @@
             }
         })();
     </script>
-    <!-- Active theme stylesheet — href set synchronously before first paint -->
-    <link id="appThemeStylesheet" rel="stylesheet" href="">
-    <script>
-        (function() {
-            var themes = { ice: '/static/css/kaldheim-theme.css', dark: '/static/css/kaldheim-dark-theme.css' };
-            var saved = localStorage.getItem('appTheme');
-            if (saved && themes[saved]) document.getElementById('appThemeStylesheet').href = themes[saved];
-        })();
-    </script>
     <script>
         /* ── Tile image picker (URL / server gallery / upload) ──────────────
          * Used by both collection groups and decks. Defined in <head>,
@@ -272,34 +263,84 @@
             });
         })();
 
-        /* ── Card hover preview (desktop only) ───────────────────────────
-         * Follow-cursor enlarged card image for elements with a
-         * data-preview-src attribute (card tiles, deck rows). */
+        /* ── Card hover popup (desktop only) ────────────────────────────*
+         * Design-faithful preview: a 290px panel beside the hovered card *
+         * with the card image plus basic details (name, type line, set,  *
+         * rarity, number, price). Elements opt in with data-preview-src  *
+         * and optional data-preview-* attributes.                        *
+         * ─────────────────────────────────────────────────────────────── */
         (function() {
             if (!window.matchMedia || !window.matchMedia('(pointer: fine)').matches) return;
-            var box = document.createElement('div');
-            box.className = 'mc-hover-preview';
-            var img = document.createElement('img');
-            img.alt = '';
-            box.appendChild(img);
-            document.body.appendChild(box);
-            var M = 16, W = 236;
+            var pop = document.createElement('div');
+            pop.className = 'mc-hover-pop';
+            pop.innerHTML =
+                '<img data-k="img" alt="">' +
+                '<div class="mc-hover-pop-head">' +
+                    '<span class="mc-hover-pop-name" data-k="name"></span>' +
+                    '<span class="mc-hover-pop-type" data-k="type"></span>' +
+                '</div>' +
+                '<div class="mc-hover-pop-meta">' +
+                    '<div class="mc-hp-row" data-k="setRow"><span>Set</span><span data-k="set"></span></div>' +
+                    '<div class="mc-hp-row" data-k="rarRow"><span>Rarity</span><span data-k="rar"></span></div>' +
+                    '<div class="mc-hp-row" data-k="numRow"><span>Number</span><span data-k="num"></span></div>' +
+                    '<div class="mc-hp-row" data-k="priceRow"><span>Price</span><span data-k="price"></span></div>' +
+                '</div>';
+            document.body.appendChild(pop);
+
+            var W = 290, M = 14;
+            var img = pop.querySelector('[data-k="img"]');
+
+            function hoverCard(e) {
+                return e.target.closest ? e.target.closest('[data-preview-src]') : null;
+            }
+            function setDetail(key, value, rowKey) {
+                pop.querySelector('[data-k="' + key + '"]').textContent = value;
+                if (rowKey) {
+                    pop.querySelector('[data-k="' + rowKey + '"]').setAttribute('data-empty', value ? 'false' : 'true');
+                }
+            }
 
             document.addEventListener('mouseover', function(e) {
-                var t = e.target.closest ? e.target.closest('[data-preview-src]') : null;
-                if (!t) return;
-                var src = t.getAttribute('data-preview-src');
-                if (src) { img.src = src; box.style.display = 'block'; }
+                var t = hoverCard(e);
+                if (!t || !t.getAttribute('data-preview-src')) return;
+                // Mouseover also fires when moving between children of the
+                // same card; only (re)fill when actually arriving at a card.
+                if (e.relatedTarget && hoverCard({ target: e.relatedTarget }) === t) return;
+
+                img.src = t.getAttribute('data-preview-src');
+                setDetail('name', t.getAttribute('data-preview-name') || '');
+                var type = t.getAttribute('data-preview-type') || '';
+                var typeEl = pop.querySelector('[data-k="type"]');
+                typeEl.textContent = type;
+                typeEl.style.display = type ? '' : 'none';
+                setDetail('set', t.getAttribute('data-preview-set') || '', 'setRow');
+                setDetail('rar', t.getAttribute('data-preview-rar') || '', 'rarRow');
+                setDetail('num', t.getAttribute('data-preview-num') || '', 'numRow');
+                setDetail('price', t.getAttribute('data-preview-price') || '', 'priceRow');
+
+                // Anchor to the right of the card, flipping to the left at
+                // the viewport edge; vertically centered on the card.
+                var r = t.getBoundingClientRect();
+                var x = r.right + M;
+                if (x + W > window.innerWidth - M) x = r.left - W - M;
+
+                pop.style.visibility = 'hidden';
+                pop.style.display = 'flex';
+                var h = pop.offsetHeight;
+                var y = r.top + (r.height / 2) - (h / 2);
+                if (y < M) y = M;
+                if (y + h > window.innerHeight - M) y = Math.max(M, window.innerHeight - h - M);
+                pop.style.left = x + 'px';
+                pop.style.top = y + 'px';
+                pop.style.visibility = 'visible';
             });
-            document.addEventListener('mousemove', function(e) {
-                if (box.style.display === 'none') return;
-                var x = e.clientX + M;
-                var y = e.clientY + M;
-                if (x + W > window.innerWidth - M) x = e.clientX - W - M;
-                box.style.transform = 'translate(' + x + 'px,' + y + 'px)';
-            });
+
             document.addEventListener('mouseout', function(e) {
-                if (e.target.closest && e.target.closest('[data-preview-src]')) box.style.display = 'none';
+                var t = hoverCard(e);
+                if (!t) return;
+                // Hide only when leaving the card for anything outside it.
+                var rel = e.relatedTarget ? hoverCard({ target: e.relatedTarget }) : null;
+                if (t !== rel) pop.style.display = 'none';
             });
         })();
 

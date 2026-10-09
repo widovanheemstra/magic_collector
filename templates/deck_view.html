@@ -79,7 +79,11 @@
                     <td>
                         <div class="d-flex align-items-center gap-2">
                             {% if c.image %}
-                            <img src="{{ c.image }}" alt="" class="mc-img-thumb mc-img-thumb-sm" {% if c.image %}data-preview-src="{{ c.image }}"{% endif %}>
+                            <img src="{{ c.image }}" alt="" class="mc-img-thumb mc-img-thumb-sm"
+                             {% if c.image %}data-preview-src="{{ c.image }}"
+                             data-preview-name="{{ c.name }}"
+                             data-preview-type="{{ c.type_line }}"
+                             data-preview-price="{{ (currency_symbol ~ '%.2f'|format(c.price)) if c.price else '' }}"{% endif %}>
                             {% endif %}
                             <div class="mc-row-name">
                                 <span class="mc-card-name">{{ c.name }}</span>
@@ -133,7 +137,11 @@
                     <td>
                         <div class="d-flex align-items-center gap-2">
                             {% if c.image %}
-                            <img src="{{ c.image }}" alt="" class="mc-img-thumb mc-img-thumb-sm" {% if c.image %}data-preview-src="{{ c.image }}"{% endif %}>
+                            <img src="{{ c.image }}" alt="" class="mc-img-thumb mc-img-thumb-sm"
+                             {% if c.image %}data-preview-src="{{ c.image }}"
+                             data-preview-name="{{ c.name }}"
+                             data-preview-type="{{ c.type_line }}"
+                             data-preview-price="{{ (currency_symbol ~ '%.2f'|format(c.price)) if c.price else '' }}"{% endif %}>
                             {% endif %}
                             <div class="mc-row-name">
                                 <span class="mc-card-name">{{ c.name }}</span>

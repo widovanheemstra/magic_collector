@@ -16,10 +16,34 @@
         <a class="mc-nav-item {% if nav_active == 'home' %}is-active{% endif %}" href="{{ url_for('index') }}">
             <i data-lucide="house" width="16" height="16"></i><span>Home</span>
         </a>
-        <a class="mc-nav-item {% if nav_active == 'collection' %}is-active{% endif %}" href="{{ url_for('view_collection') }}">
-            <i data-lucide="layers" width="16" height="16"></i><span>Collection</span>
-            <span class="mc-nav-count">{{ "{:,}".format(sidebar_total_cards) }}</span>
-        </a>
+        <div class="mc-nav-group">
+            <a class="mc-nav-item {% if nav_active == 'collection' and not active_binder_id %}is-active{% endif %}"
+               href="{{ url_for('view_collection') }}">
+                <i data-lucide="layers" width="16" height="16"></i><span>Collection</span>
+                <span class="mc-nav-count">{{ "{:,}".format(sidebar_total_cards) }}</span>
+            </a>
+            <div class="mc-binder-list" aria-label="Binders">
+                <a class="mc-binder-link {% if nav_active == 'collection' and not active_binder_id %}is-active{% endif %}"
+                   href="{{ url_for('view_collection') }}">
+                    <span>All cards</span>
+                    <span class="mc-binder-count">{{ "{:,}".format(sidebar_total_unique) }}</span>
+                </a>
+                {% for binder in sidebar_binders %}
+                <a class="mc-binder-link {% if active_binder_id == binder.id %}is-active{% endif %}"
+                   href="{{ url_for('view_collection_group', group_id=binder.id) }}">
+                    <span>{{ binder.name }}</span>
+                    <span class="mc-binder-count">{{ binder.unique_count }}</span>
+                </a>
+                {% endfor %}
+                {% if sidebar_default_binder %}
+                <a class="mc-binder-link {% if active_binder_id == sidebar_default_binder.id %}is-active{% endif %}"
+                   href="{{ url_for('view_collection_group', group_id=sidebar_default_binder.id) }}">
+                    <span>{{ sidebar_default_binder.name }}</span>
+                    <span class="mc-binder-count">{{ sidebar_default_binder.unique_count }}</span>
+                </a>
+                {% endif %}
+            </div>
+        </div>
         <a class="mc-nav-item {% if nav_active == 'decks' %}is-active{% endif %}" href="{{ url_for('decks') }}">
             <i data-lucide="copy" width="16" height="16"></i><span>Decks</span>
             <span class="mc-nav-count">{{ sidebar_deck_count }}</span>
@@ -31,28 +55,6 @@
             <i data-lucide="search" width="16" height="16"></i><span>Advanced search</span>
         </a>
     </nav>
-
-    <div class="mc-binder-list" aria-label="Binders">
-        <a class="mc-binder-link {% if nav_active == 'collection' and not active_binder_id %}is-active{% endif %}"
-           href="{{ url_for('view_collection') }}">
-            <span>All cards</span>
-            <span class="mc-binder-count">{{ "{:,}".format(sidebar_total_unique) }}</span>
-        </a>
-        {% for binder in sidebar_binders %}
-        <a class="mc-binder-link {% if active_binder_id == binder.id %}is-active{% endif %}"
-           href="{{ url_for('view_collection_group', group_id=binder.id) }}">
-            <span>{{ binder.name }}</span>
-            <span class="mc-binder-count">{{ binder.unique_count }}</span>
-        </a>
-        {% endfor %}
-        {% if sidebar_default_binder %}
-        <a class="mc-binder-link {% if active_binder_id == sidebar_default_binder.id %}is-active{% endif %}"
-           href="{{ url_for('view_collection_group', group_id=sidebar_default_binder.id) }}">
-            <span>{{ sidebar_default_binder.name }}</span>
-            <span class="mc-binder-count">{{ sidebar_default_binder.unique_count }}</span>
-        </a>
-        {% endif %}
-    </div>
 
     <button class="mc-btn mc-btn-primary mc-add-btn" type="button"
             data-bs-toggle="modal" data-bs-target="#addCardsModal">

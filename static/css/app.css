@@ -417,6 +417,7 @@ svg.lucide { stroke-width: 1.5; vertical-align: middle; flex: none; }
 }
 
 .mc-nav { display: flex; flex-direction: column; gap: 2px; }
+.mc-nav-group { display: flex; flex-direction: column; gap: 2px; }
 .mc-nav-item {
   display: flex;
   align-items: center;
@@ -436,9 +437,10 @@ svg.lucide { stroke-width: 1.5; vertical-align: middle; flex: none; }
 .mc-binder-list {
   display: flex;
   flex-direction: column;
+  gap: 1px;
   border-left: 1px solid var(--ln);
-  margin-left: 11px;
-  padding-left: 9px;
+  margin: 2px 0 4px 18px;
+  padding-left: 10px;
 }
 .mc-binder-link {
   display: flex;
@@ -1100,21 +1102,48 @@ svg.lucide { stroke-width: 1.5; vertical-align: middle; flex: none; }
 .mc-settings-danger { border-color: color-mix(in srgb, #b4554f 55%, transparent); }
 .mc-settings-danger .mc-h2 { color: #b4554f; }
 
-/* ── Card hover preview (desktop) ─────────────────────────────────────── */
+/* ── Card hover popup (desktop) ───────────────────────────────────────── */
 
-.mc-hover-preview {
+.mc-hover-pop {
   position: fixed;
   top: 0;
   left: 0;
-  z-index: 60;
-  pointer-events: none;
-  width: 236px;
+  z-index: 120;
   display: none;
-  will-change: transform;
-  border-radius: var(--card-radius);
-  filter: drop-shadow(0 12px 26px rgba(0, 0, 0, 0.35));
+  flex-direction: column;
+  gap: 10px;
+  width: 290px;
+  padding: 12px;
+  background: var(--bg);
+  border: 1px solid var(--ln);
+  box-shadow: var(--shadow-lg);
+  color: var(--fg);
+  font-family: var(--font-body);
+  pointer-events: none;
 }
-.mc-hover-preview img { display: block; width: 100%; border-radius: var(--card-radius); }
+.mc-hover-pop img {
+  display: block;
+  width: 100%;
+  aspect-ratio: 488 / 680;
+  object-fit: cover;
+  border-radius: var(--card-radius);
+  background: var(--sf);
+}
+.mc-hover-pop-head { display: flex; flex-direction: column; gap: 2px; }
+.mc-hover-pop-name { font-family: var(--font-heading); font-weight: 600; font-size: 19px; line-height: 1.1; }
+.mc-hover-pop-type { font-size: 12px; color: var(--mu); }
+.mc-hover-pop-meta {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 4px 16px;
+  margin-top: 2px;
+  padding-top: 8px;
+  border-top: 1px solid var(--ln);
+  font-size: 12.5px;
+}
+.mc-hp-row { display: contents; }
+.mc-hp-row > span:first-child { color: var(--mu); }
+.mc-hp-row[data-empty="true"] { display: none; }
 
 /* ── Horizontal table scroll (narrow screens) ─────────────────────────── */
 
