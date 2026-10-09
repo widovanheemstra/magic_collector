@@ -67,6 +67,86 @@ def set_theme(theme):
     set_setting('theme', theme)
     return redirect(request.referrer or url_for('index'))
 
+
+# Top-level destination for each route, used to highlight the sidebar/tab bar.
+NAV_ACTIVE_BY_ENDPOINT = {
+    'index': 'home',
+    'view_collection': 'collection',
+    'view_collection_group': 'collection',
+    'decks': 'decks',
+    'deck_view': 'decks',
+    'deck_edit': 'decks',
+    'deck_new': 'decks',
+    'view_sets': 'sets',
+    'view_cards_by_set': 'sets',
+    'search_cards': 'search',
+    'view_settings': 'settings',
+}
+
+
+def get_sidebar_context():
+    """Navigation data for the shell: custom groups (binders) with counts, the
+    default group, and collection/deck totals for sidebar badges.
+
+    Returns a dict consumed by _sidebar.html / _tabbar.html.
+    """
+    conn = sqlite3.connect(DATABASE)
+    conn.row_factory = sqlite3.Row
+    cursor = conn.cursor()
+    cursor.execute('''
+        SELECT g.id, g.name, g.image_url,
+               COALESCE(SUM(uc.quantity), 0) AS card_count,
+               COUNT(DISTINCT uc.card_id) AS unique_count
+        FROM collection_groups g
+        LEFT JOIN user_collection uc ON uc.group_id = g.id
+        WHERE g.set_code IS NULL
+        GROUP BY g.id
+        ORDER BY g.name COLLATE NOCASE
+    ''')
+    rows = cursor.fetchall()
+
+    cursor.execute('SELECT COALESCE(SUM(quantity), 0) FROM user_collection')
+    total_cards = cursor.fetchone()[0]
+    cursor.execute('SELECT COUNT(DISTINCT card_id) FROM user_collection')
+    total_unique = cursor.fetchone()[0]
+    cursor.execute('SELECT COUNT(*) FROM decks')
+    deck_count = cursor.fetchone()[0]
+    conn.close()
+
+    binders = []
+    default_binder = None
+    for r in rows:
+        item = {
+            'id': r['id'],
+            'name': r['name'],
+            'image_url': r['image_url'],
+            'card_count': r['card_count'],
+            'unique_count': r['unique_count'],
+        }
+        if r['name'] == 'My Collection':
+            default_binder = item
+        else:
+            binders.append(item)
+
+    active_binder_id = None
+    if request.endpoint == 'view_collection_group':
+        active_binder_id = request.view_args.get('group_id')
+
+    return {
+        'sidebar_binders': binders,
+        'sidebar_default_binder': default_binder,
+        'sidebar_total_cards': total_cards,
+        'sidebar_total_unique': total_unique,
+        'sidebar_deck_count': deck_count,
+        'nav_active': NAV_ACTIVE_BY_ENDPOINT.get(request.endpoint, ''),
+        'active_binder_id': active_binder_id,
+    }
+
+
+@app.context_processor
+def inject_navigation():
+    return get_sidebar_context()
+
 # Tile images (collection groups and decks): pre-bundled choices live in
 # GALLERY_DIR (shared), user uploads are saved into their own per-entity folder.
 ALLOWED_IMAGE_EXTENSIONS = {'jpg', 'jpeg', 'gif', 'webp', 'png', 'svg'}
@@ -1338,6 +1418,23 @@ def fetch_cards(set_code):
         return jsonify({'success': True, 'message': f'Fetched and stored {len(cards_data)} cards for set {set_code}'})
     else:
         return jsonify({'success': False, 'message': f'Failed to fetch cards for set {set_code}'})
+
+@app.route('/api/card_names')
+def api_card_names():
+    """Return up to 8 distinct card names starting with the query (for autocomplete)."""
+    q = (request.args.get('q') or '').strip()
+    if len(q) < 2:
+        return jsonify({'names': []})
+    conn = sqlite3.connect(DATABASE)
+    cursor = conn.cursor()
+    cursor.execute(
+        'SELECT DISTINCT name FROM cards WHERE name LIKE ? ORDER BY name LIMIT 8',
+        (f'{q}%',),
+    )
+    names = [r[0] for r in cursor.fetchall()]
+    conn.close()
+    return jsonify({'names': names})
+
 
 @app.route('/api/card_by_name')
 def api_card_by_name():

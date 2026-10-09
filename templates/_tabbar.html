@@ -1,0 +1,18 @@
+<nav class="mc-tabbar" aria-label="Main navigation">
+    <a class="mc-tab {% if nav_active == 'home' %}is-active{% endif %}" href="{{ url_for('index') }}">
+        <i data-lucide="house" width="20" height="20"></i><span>Home</span>
+    </a>
+    <a class="mc-tab {% if nav_active == 'collection' %}is-active{% endif %}" href="{{ url_for('view_collection') }}">
+        <i data-lucide="layers" width="20" height="20"></i><span>Collection</span>
+    </a>
+    <button class="mc-tab-add" type="button" data-bs-toggle="modal" data-bs-target="#addCardsModal"
+            aria-label="Add cards">
+        <i data-lucide="plus" width="22" height="22"></i>
+    </button>
+    <a class="mc-tab {% if nav_active == 'decks' %}is-active{% endif %}" href="{{ url_for('decks') }}">
+        <i data-lucide="copy" width="20" height="20"></i><span>Decks</span>
+    </a>
+    <a class="mc-tab {% if nav_active == 'sets' %}is-active{% endif %}" href="{{ url_for('view_sets') }}">
+        <i data-lucide="book" width="20" height="20"></i><span>Sets</span>
+    </a>
+</nav>

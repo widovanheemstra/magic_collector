@@ -1,0 +1,76 @@
+<aside class="mc-sidebar" aria-label="Main navigation">
+    <a class="mc-brand" href="{{ url_for('index') }}">
+        <span class="mc-brand-mark" aria-hidden="true"></span>
+        <span class="mc-brand-name">Magic Collector</span>
+    </a>
+
+    <div class="mc-quickfind">
+        <i data-lucide="search" width="15" height="15"></i>
+        <input id="quickFind" type="search" placeholder="Find any card…" list="quickFindList"
+               aria-label="Find any card" autocomplete="off" spellcheck="false">
+        <kbd>⌘K</kbd>
+        <datalist id="quickFindList"></datalist>
+    </div>
+
+    <nav class="mc-nav">
+        <a class="mc-nav-item {% if nav_active == 'home' %}is-active{% endif %}" href="{{ url_for('index') }}">
+            <i data-lucide="house" width="16" height="16"></i><span>Home</span>
+        </a>
+        <a class="mc-nav-item {% if nav_active == 'collection' %}is-active{% endif %}" href="{{ url_for('view_collection') }}">
+            <i data-lucide="layers" width="16" height="16"></i><span>Collection</span>
+            <span class="mc-nav-count">{{ "{:,}".format(sidebar_total_cards) }}</span>
+        </a>
+        <a class="mc-nav-item {% if nav_active == 'decks' %}is-active{% endif %}" href="{{ url_for('decks') }}">
+            <i data-lucide="copy" width="16" height="16"></i><span>Decks</span>
+            <span class="mc-nav-count">{{ sidebar_deck_count }}</span>
+        </a>
+        <a class="mc-nav-item {% if nav_active == 'sets' %}is-active{% endif %}" href="{{ url_for('view_sets') }}">
+            <i data-lucide="book" width="16" height="16"></i><span>Sets</span>
+        </a>
+        <a class="mc-nav-item {% if nav_active == 'search' %}is-active{% endif %}" href="{{ url_for('search_cards') }}">
+            <i data-lucide="search" width="16" height="16"></i><span>Advanced search</span>
+        </a>
+    </nav>
+
+    <div class="mc-binder-list" aria-label="Binders">
+        <a class="mc-binder-link {% if nav_active == 'collection' and not active_binder_id %}is-active{% endif %}"
+           href="{{ url_for('view_collection') }}">
+            <span>All cards</span>
+            <span class="mc-binder-count">{{ "{:,}".format(sidebar_total_unique) }}</span>
+        </a>
+        {% for binder in sidebar_binders %}
+        <a class="mc-binder-link {% if active_binder_id == binder.id %}is-active{% endif %}"
+           href="{{ url_for('view_collection_group', group_id=binder.id) }}">
+            <span>{{ binder.name }}</span>
+            <span class="mc-binder-count">{{ binder.unique_count }}</span>
+        </a>
+        {% endfor %}
+        {% if sidebar_default_binder %}
+        <a class="mc-binder-link {% if active_binder_id == sidebar_default_binder.id %}is-active{% endif %}"
+           href="{{ url_for('view_collection_group', group_id=sidebar_default_binder.id) }}">
+            <span>{{ sidebar_default_binder.name }}</span>
+            <span class="mc-binder-count">{{ sidebar_default_binder.unique_count }}</span>
+        </a>
+        {% endif %}
+    </div>
+
+    <button class="mc-btn mc-btn-primary mc-add-btn" type="button"
+            data-bs-toggle="modal" data-bs-target="#addCardsModal">
+        <i data-lucide="plus" width="16" height="16"></i>
+        <span>Add cards</span>
+    </button>
+
+    <div class="mc-sidebar-foot">
+        <div class="mc-seg" role="group" aria-label="Display currency">
+            <a class="mc-seg-opt {% if currency == 'EUR' %}is-active{% endif %}" data-no-spa
+               href="{{ url_for('set_currency', currency='EUR') }}">EUR €</a>
+            <a class="mc-seg-opt {% if currency == 'USD' %}is-active{% endif %}" data-no-spa
+               href="{{ url_for('set_currency', currency='USD') }}">USD $</a>
+        </div>
+        <a class="mc-sidebar-settings {% if nav_active == 'settings' %}is-active{% endif %}"
+           href="{{ url_for('view_settings') }}">
+            <i data-lucide="sliders-horizontal" width="15" height="15"></i>
+            <span>Settings</span>
+        </a>
+    </div>
+</aside>

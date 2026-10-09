@@ -1,0 +1,41 @@
+<div class="modal fade" id="addCardsModal" tabindex="-1"
+     aria-labelledby="addCardsModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-centered">
+        <div class="modal-content rounded-0">
+            <div class="modal-header border-0 pb-0">
+                <h5 class="modal-title" id="addCardsModalLabel">Add cards</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <p class="mc-muted small mb-3">
+                    One card per line. Quantity, set code, number and <code>*F*</code> for foil are optional.
+                </p>
+                <textarea id="addCardsText" class="mc-textarea" rows="8"
+                          placeholder="4 Lightning Bolt&#10;2 Sol Ring (CMM)&#10;1 Counterspell *F*&#10;3 Heartless Act (TLA) 82"></textarea>
+                <div class="row g-3 mt-1">
+                    <div class="col-md-6">
+                        <label class="mc-label d-block mb-1" for="addCardsGroup">Add to binder</label>
+                        <select id="addCardsGroup" class="mc-select">
+                            {% if sidebar_default_binder %}
+                            <option value="{{ sidebar_default_binder.id }}">{{ sidebar_default_binder.name }}</option>
+                            {% endif %}
+                            {% for binder in sidebar_binders %}
+                            <option value="{{ binder.id }}">{{ binder.name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="col-md-6 d-flex align-items-end">
+                        <label class="mc-check" for="addCardsFoil">
+                            <input type="checkbox" id="addCardsFoil" class="form-check-input">
+                            Mark all as foil
+                        </label>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer border-0">
+                <button type="button" class="mc-btn mc-btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="mc-btn mc-btn-primary" id="addCardsSubmit" disabled>Add cards</button>
+            </div>
+        </div>
+    </div>
+</div>
