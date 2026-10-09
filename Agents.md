@@ -2,21 +2,21 @@
 
 ## Commands
 
-Install deps and run the web app:
+Install deps and run the web app (managed with uv; `uv sync` installs into a local `.venv`, exact versions are pinned in `uv.lock`):
 ```bash
-pip install -r requirements.txt
-python app.py            # serves on http://127.0.0.1:5001 by default
+uv sync
+uv run app.py            # serves on http://127.0.0.1:5001 by default
 ```
 
 Smoke-test the Scryfall API (no test framework configured):
 ```bash
-python test_api.py
+uv run test_api.py
 ```
 
 Elasticsearch indexing pipeline (requires a running ES cluster and `.env` configured — see `.env.example`):
 ```bash
-python create_elk_index.py        # create the `mtg_cards` index with mappings
-python load_bulk_cards_to_elk.py  # download Scryfall bulk data and bulk-index every card
+uv run create_elk_index.py        # create the `mtg_cards` index with mappings
+uv run load_bulk_cards_to_elk.py  # download Scryfall bulk data and bulk-index every card
 ```
 
 `main.py` is an unused stub from `uv init` — the real entry point is `app.py`.
@@ -47,7 +47,7 @@ This is a single-file Flask monolith (`app.py`, ~1700 lines) backed by a local S
 
 - Schema changes belong in `init_db()`. There are no migrations — additive `ALTER TABLE` patterns inside `init_db()` (wrapped in try/except for "already exists") are the convention.
 - When adding routes that read/write the collection, reuse the `*_collection*` helpers rather than issuing raw SQL — they handle the foil/non-foil split and timestamps.
-- `requirements.txt` is the authoritative dep list; `pyproject.toml` exists for `uv` but its `dependencies = []` is empty and not used.
+- `pyproject.toml` is the authoritative dep list (managed with uv; exact versions pinned in `uv.lock`); `requirements.txt` was migrated away.
 
 ## Agent skills
 

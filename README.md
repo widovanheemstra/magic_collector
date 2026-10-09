@@ -39,9 +39,9 @@ A comprehensive Python web application for collecting and managing Magic: The Ga
 ## Installation
 
 1. Clone or download this repository
-2. Install the required dependencies:
+2. Install [uv](https://docs.astral.sh/uv/) if you don't have it yet, then install the dependencies:
    ```bash
-   pip install -r requirements.txt
+   uv sync
    ```
 3. (Optional) Create a `.env` file to customize configuration (see Configuration section below)
 
@@ -108,7 +108,7 @@ If no `.env` file is present, the application will use the default values.
 
 1. Run the application:
    ```bash
-   python app.py
+   uv run app.py
    ```
 
 2. Open your web browser and navigate to `http://localhost:5001`
@@ -219,7 +219,7 @@ The application includes scripts to index all MTG cards into Elasticsearch for a
 The `create_elk_index.py` script creates an Elasticsearch index with proper mappings for all card fields:
 
 ```bash
-python create_elk_index.py
+uv run create_elk_index.py
 ```
 
 **What it does:**
@@ -241,7 +241,7 @@ python create_elk_index.py
 The `load_bulk_cards_to_elk.py` script downloads and indexes all cards from Scryfall's bulk data API:
 
 ```bash
-python load_bulk_cards_to_elk.py
+uv run load_bulk_cards_to_elk.py
 ```
 
 **What it does:**
@@ -276,12 +276,12 @@ python load_bulk_cards_to_elk.py
 
 2. **Create the Index**:
    ```bash
-   python create_elk_index.py
+   uv run create_elk_index.py
    ```
 
 3. **Load Card Data**:
    ```bash
-   python load_bulk_cards_to_elk.py
+   uv run load_bulk_cards_to_elk.py
    ```
    ⚠️ **Warning**: This will download and index ALL cards from Scryfall (hundreds of thousands of cards). This process may take significant time and bandwidth.
 
