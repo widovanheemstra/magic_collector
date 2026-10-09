@@ -23,6 +23,9 @@
             {% if card.qty_foil %}<span class="mc-qty-badge mc-qty-foil" id="badge-{{ card.id }}-1">★ {{ card.qty_foil }}×</span>{% endif %}
         </div>
         {% endif %}
+        {% if show_add %}
+        <button type="button" class="mc-quick-add" data-card-id="{{ card.id }}" aria-label="Add a copy">+</button>
+        {% endif %}
         {% if show_steppers %}
         <div class="mc-steppers">
             <div class="mc-stepper">

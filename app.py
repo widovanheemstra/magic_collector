@@ -1041,32 +1041,82 @@ def index():
 
 @app.route('/sets')
 def view_sets():
-    """View all sets"""
+    """View all sets with owned/synced stats."""
     conn = sqlite3.connect(DATABASE)
     cursor = conn.cursor()
     cursor.execute('SELECT * FROM sets ORDER BY released_at DESC')
-    sets = cursor.fetchall()
+    raw_sets = cursor.fetchall()
+
+    cursor.execute('''
+        SELECT c.set_code, COUNT(DISTINCT c.id) AS owned_unique,
+               COALESCE(SUM(uc.quantity), 0) AS owned_qty
+        FROM user_collection uc JOIN cards c ON c.id = uc.card_id
+        GROUP BY c.set_code
+    ''')
+    owned_map = {code: (unique, qty) for code, unique, qty in cursor.fetchall()}
+    cursor.execute('SELECT set_code, COUNT(*) FROM cards GROUP BY set_code')
+    synced_map = dict(cursor.fetchall())
+    types = sorted({s[3] for s in raw_sets if s[3]})
     conn.close()
-    
-    return render_template('sets.html', sets=sets)
+
+    sets = []
+    for s in raw_sets:
+        owned_unique, owned_qty = owned_map.get(s[1], (0, 0))
+        sets.append({
+            'id': s[0], 'code': s[1], 'name': s[2], 'set_type': s[3],
+            'released_at': s[4], 'card_count': s[8], 'icon_svg_uri': s[14],
+            'foil_only': s[10], 'digital': s[9],
+            'owned_unique': owned_unique, 'owned_qty': owned_qty,
+            'synced': synced_map.get(s[1], 0),
+        })
+    return render_template('sets.html', sets=sets, set_types=types)
 
 @app.route('/cards/<set_code>')
 def view_cards_by_set(set_code):
-    """View cards for a specific set"""
+    """View cards for a specific set, with per-card ownership and sorting."""
     conn = sqlite3.connect(DATABASE)
     cursor = conn.cursor()
-    
-    # Get set info
     cursor.execute('SELECT * FROM sets WHERE code = ?', (set_code,))
-    set_info = cursor.fetchone()
-    
-    # Get cards for this set - sort by collector number as number
-    cursor.execute('SELECT * FROM cards WHERE set_code = ? ORDER BY CAST(collector_number AS INTEGER)', (set_code,))
-    cards = cursor.fetchall()
-    
+    s = cursor.fetchone()
+    if not s:
+        conn.close()
+        return redirect(url_for('view_sets'))
+    currency = get_currency()
+
+    cursor.execute('''
+        SELECT c.*,
+               COALESCE(SUM(CASE WHEN uc.is_foil = 0 THEN uc.quantity ELSE 0 END), 0) AS qty_regular,
+               COALESCE(SUM(CASE WHEN uc.is_foil = 1 THEN uc.quantity ELSE 0 END), 0) AS qty_foil
+        FROM cards c
+        LEFT JOIN user_collection uc ON uc.card_id = c.id
+        WHERE c.set_code = ?
+        GROUP BY c.id
+    ''', (set_code,))
+    cards = [card_dict_from_row(row, row[40], row[41], currency) for row in cursor.fetchall()]
     conn.close()
-    
-    return render_template('cards.html', set_info=set_info, cards=cards)
+
+    sort_mode = request.args.get('sort', 'collector')
+    if sort_mode not in ('collector', 'name', 'price'):
+        sort_mode = 'collector'
+    if sort_mode == 'name':
+        cards.sort(key=lambda c: c['name'].lower())
+    elif sort_mode == 'price':
+        cards.sort(key=lambda c: c['price'] or 0, reverse=True)
+    else:
+        cards.sort(key=_collector_key)
+
+    total_owned = sum(c['qty_regular'] + c['qty_foil'] for c in cards)
+    if request.args.get('owned'):
+        cards = [c for c in cards if c['qty_regular'] + c['qty_foil'] > 0]
+
+    set_info = {
+        'code': s[1], 'name': s[2], 'set_type': s[3], 'released_at': s[4],
+        'card_count': s[8], 'icon_svg_uri': s[14], 'digital': s[9],
+        'foil_only': s[10], 'nonfoil_only': s[11], 'printed_size': s[16],
+    }
+    total_owned = sum(c['qty_regular'] + c['qty_foil'] for c in cards)
+    return render_template('cards.html', set_info=set_info, cards=cards,
+                           total_owned=total_owned, sort_mode=sort_mode)
 
 @app.route('/card/<card_id>')
 def view_card_detail(card_id):

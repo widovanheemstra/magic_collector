@@ -1,164 +1,139 @@
 {% extends "base.html" %}
 
-{% block title %}Magic Sets - Magic Collector{% endblock %}
+{% block title %}Sets - Magic Collector{% endblock %}
 
 {% block content %}
-<div class="row">
-    <div class="col-12">
-        <div class="d-flex justify-content-between align-items-center mb-4">
-            <h1><i class="fas fa-layer-group"></i> Magic Sets</h1>
-            <button class="btn btn-primary" onclick="fetchSets()">
-                <i class="fas fa-sync"></i> Refresh Sets
-            </button>
-        </div>
-        {% if sets %}
-        <div class="mb-3">
-            <div class="input-group">
-                <span class="input-group-text"><i class="fas fa-search"></i></span>
-                <input type="search" id="setSearch" class="form-control" placeholder="Filter by set name or code..." oninput="filterSets()" autocomplete="off">
-                <button class="btn btn-outline-secondary" type="button" onclick="document.getElementById('setSearch').value=''; filterSets();">Clear</button>
-            </div>
-            <small class="text-muted"><span id="setMatchCount">{{ sets|length }}</span> of {{ sets|length }} sets shown</small>
-        </div>
-        {% endif %}
+<div class="mc-page-head">
+    <div>
+        <h1 class="mc-h1 mb-1">Sets</h1>
+        <p class="mc-sub mb-0">{{ "{:,}".format(sets|length) }} sets from Scryfall</p>
+    </div>
+    <div class="mc-page-actions">
+        <button class="mc-btn mc-btn-primary" type="button" id="syncSetsBtn" onclick="syncSets()">
+            <i data-lucide="refresh-cw" width="15" height="15"></i> Sync with Scryfall
+        </button>
     </div>
 </div>
 
-<div class="row" id="setsGrid">
-    {% if sets %}
-        {% for set in sets %}
-        <div class="col-md-6 col-lg-4 mb-4 set-tile" data-set-name="{{ set[2]|lower }}" data-set-code="{{ set[1]|lower }}">
-            <div class="card set-card h-100" style="cursor: pointer;" onclick="viewSetCards('{{ set[1] }}')">
-                <div class="card-body">
-                    <div class="d-flex justify-content-between align-items-start mb-2">
-                        <h5 class="card-title">{{ set[2] }}</h5>
-                        <span class="badge bg-secondary">{{ set[3] }}</span>
-                    </div>
-                    <p class="card-text">
-                        <strong>Code:</strong> {{ set[1] }}<br>
-                        <strong>Released:</strong> {{ set[4] or 'Unknown' }}<br>
-                        <strong>Cards:</strong> {{ set[8] or 0 }}<br>
-                        {% if set[5] %}
-                        <strong>Block:</strong> {{ set[6] or set[5] }}<br>
-                        {% endif %}
-                        {% if set[9] %}
-                        <span class="badge bg-info">Digital</span>
-                        {% endif %}
-                        {% if set[10] %}
-                        <span class="badge bg-warning">Foil Only</span>
-                        {% endif %}
-                        {% if set[11] %}
-                        <span class="badge bg-success">Non-Foil Only</span>
-                        {% endif %}
-                    </p>
-                </div>
-                <div class="card-footer" onclick="event.stopPropagation()">
-                    <div class="btn-group w-100 mb-2" role="group">
-                        <a href="/cards/{{ set[1] }}" class="btn btn-outline-primary">
-                            <i class="fas fa-cards-blank"></i> View Cards
-                        </a>
-                        <button class="btn btn-outline-success" onclick="fetchCards('{{ set[1] }}')">
-                            <i class="fas fa-download"></i> Fetch Cards
-                        </button>
-                    </div>
-                    <button class="btn btn-success w-100" onclick="addSetToCollection('{{ set[1] }}', this)">
-                        <i class="fas fa-plus"></i> Add to Collection
-                    </button>
-                </div>
-            </div>
+<div class="mc-toolbar">
+    <div class="mc-search">
+        <i data-lucide="search" width="15" height="15"></i>
+        <input type="search" id="setSearch" placeholder="Filter sets…" oninput="filterSets()" autocomplete="off">
+    </div>
+    <div class="mc-toolbar-right">
+        <select id="setTypeFilter" class="mc-select" style="width:160px;" onchange="filterSets()">
+            <option value="">All types</option>
+            {% for t in set_types %}<option value="{{ t }}">{{ t }}</option>{% endfor %}
+        </select>
+        <div class="mc-seg" role="group" aria-label="Set filter">
+            <button type="button" class="mc-seg-opt is-active" id="setScopeAll" onclick="setSetScope('all')">All sets</button>
+            <button type="button" class="mc-seg-opt" id="setScopeOwned" onclick="setSetScope('owned')">Owned sets</button>
         </div>
-        {% endfor %}
-    {% else %}
-        <div class="col-12">
-            <div class="alert alert-warning text-center">
-                <h4><i class="fas fa-exclamation-triangle"></i> No Sets Available</h4>
-                <p>No sets have been loaded yet. Click the "Refresh Sets" button to fetch sets from the Scryfall API.</p>
-                <button class="btn btn-primary" onclick="fetchSets()">
-                    <i class="fas fa-download"></i> Fetch All Sets
-                </button>
-            </div>
-        </div>
-    {% endif %}
+    </div>
 </div>
 
 {% if sets %}
-<div class="row mt-4">
-    <div class="col-12">
-        <div class="card">
-            <div class="card-header">
-                <h5><i class="fas fa-chart-bar"></i> Sets Summary</h5>
-            </div>
-            <div class="card-body">
-                <div class="row text-center">
-                    <div class="col-md-3">
-                        <h4 class="text-primary">{{ sets|length }}</h4>
-                        <p class="text-muted">Total Sets</p>
-                    </div>
-                    <div class="col-md-3">
-                        <h4 class="text-success">{{ sets|selectattr('9', 'equalto', True)|list|length }}</h4>
-                        <p class="text-muted">Digital Sets</p>
-                    </div>
-                    <div class="col-md-3">
-                        <h4 class="text-info">{{ sets|map(attribute='8')|reject('none')|sum }}</h4>
-                        <p class="text-muted">Total Cards</p>
-                    </div>
-                    <div class="col-md-3">
-                        <h4 class="text-warning">{{ sets|selectattr('3', 'equalto', 'core')|list|length }}</h4>
-                        <p class="text-muted">Core Sets</p>
-                    </div>
+<table class="mc-table mc-sets-table">
+    <thead>
+        <tr>
+            <th style="width:32px;"></th>
+            <th>Set</th>
+            <th style="width:120px;">Type</th>
+            <th style="width:110px;">Released</th>
+            <th class="text-end" style="width:70px;">Cards</th>
+            <th style="width:220px;">Owned</th>
+            <th style="width:110px;">Sync</th>
+        </tr>
+    </thead>
+    <tbody id="setsGrid">
+        {% for s in sets %}
+        {% set pct = (s.owned_unique / s.card_count * 100)|round|int if s.card_count else 100 %}
+        <tr class="set-tile" data-set-code="{{ s.code|lower }}" data-set-name="{{ s.name|lower }}" data-set-type="{{ s.set_type|lower }}"
+            data-owned="{{ '1' if s.owned_qty else '0' }}" onclick="viewSetCards('{{ s.code }}')">
+            <td>
+                {% if s.icon_svg_uri %}<img src="{{ s.icon_svg_uri }}" alt="" class="mc-set-icon" width="22" height="22">{% endif %}
+            </td>
+            <td>
+                <strong>{{ s.name }}</strong>
+                <span class="mc-muted ms-2">{{ s.code }}</span>
+            </td>
+            <td class="mc-muted">{{ s.set_type }}</td>
+            <td class="mc-muted">{{ (s.released_at or '')[:10] }}</td>
+            <td class="text-end">{{ s.card_count or s.synced or 0 }}</td>
+            <td>
+                {% if s.owned_qty %}
+                <div class="d-flex align-items-center gap-2">
+                    <div class="mc-progress flex-grow-1"><span style="width:{{ pct }}%;"></span></div>
+                    <span class="mc-muted" style="white-space:nowrap;">{{ s.owned_unique }} / {{ s.card_count or s.synced or 0 }}</span>
                 </div>
-            </div>
-        </div>
-    </div>
+                {% else %}
+                <span class="mc-muted">—</span>
+                {% endif %}
+            </td>
+            <td>
+                {% if s.synced %}
+                <span class="mc-tag">Fetched</span>
+                {% else %}
+                <span class="mc-tag mc-tag-outline">Not fetched</span>
+                {% endif %}
+            </td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% else %}
+<div class="mc-empty">
+    <p class="mb-2">No sets loaded yet.</p>
+    <button class="mc-btn mc-btn-primary" type="button" onclick="syncSets()">Sync with Scryfall</button>
 </div>
 {% endif %}
 
-<style>
-.set-card {
-    transition: transform 0.2s ease-in-out, box-shadow 0.2s ease-in-out;
-}
-
-.set-card:hover {
-    transform: translateY(-5px);
-    box-shadow: 0 8px 25px rgba(0,0,0,0.15);
-}
-</style>
-
 <script>
+let SET_SCOPE = 'all';
+
 function viewSetCards(setCode) {
-    (window.spaNavigate || (u => { window.location.href = u; }))(`/cards/${setCode}`);
+    (window.spaNavigate || (u => { window.location.href = u; }))('/cards/' + setCode);
+}
+
+function setSetScope(scope) {
+    SET_SCOPE = scope;
+    document.getElementById('setScopeAll').classList.toggle('is-active', scope === 'all');
+    document.getElementById('setScopeOwned').classList.toggle('is-active', scope === 'owned');
+    filterSets();
 }
 
 function filterSets() {
     const q = document.getElementById('setSearch').value.trim().toLowerCase();
+    const type = document.getElementById('setTypeFilter').value.toLowerCase();
     let shown = 0;
     document.querySelectorAll('#setsGrid .set-tile').forEach(tile => {
-        const match = !q || tile.dataset.setName.includes(q) || tile.dataset.setCode.includes(q);
-        tile.style.display = match ? '' : 'none';
-        if (match) shown++;
+        const matchQ = !q || tile.dataset.setName.includes(q) || tile.dataset.setCode.includes(q);
+        const matchT = !type || tile.dataset.setType === type;
+        const matchS = SET_SCOPE === 'all' || tile.dataset.owned === '1';
+        const show = matchQ && matchT && matchS;
+        tile.style.display = show ? '' : 'none';
+        if (show) shown++;
     });
-    const counter = document.getElementById('setMatchCount');
-    if (counter) counter.textContent = shown;
 }
 
-function addSetToCollection(setCode, btn) {
-    if (!confirm('Add 1x of every card in set ' + setCode + ' to your collection? Cards will be fetched from Scryfall if not yet loaded.')) return;
+async function syncSets() {
+    const btn = document.getElementById('syncSetsBtn');
     const original = btn.innerHTML;
     btn.disabled = true;
-    btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Adding...';
-    fetch('/add_set_to_collection/' + setCode, { method: 'POST' })
-        .then(r => r.json())
-        .then(d => {
-            alert(d.message || (d.success ? 'Done' : 'Failed'));
-            btn.disabled = false;
-            btn.innerHTML = original;
-            if (d.success && d.group_id) (window.spaNavigate || (u => { window.location.href = u; }))('/collection/' + d.group_id);
-        })
-        .catch(e => {
-            alert('Error: ' + e.message);
-            btn.disabled = false;
-            btn.innerHTML = original;
-        });
+    btn.innerHTML = '<i data-lucide="refresh-cw"></i> Syncing…';
+    renderLucideIcons();
+    try {
+        const r = await fetch('/fetch_sets', { method: 'POST' });
+        const d = await r.json();
+        if (d.success) window.location.reload();
+        else alert(d.message || 'Sync failed');
+    } catch (e) {
+        alert('Error: ' + e.message);
+    } finally {
+        btn.disabled = false;
+        btn.innerHTML = original;
+        renderLucideIcons();
+    }
 }
 </script>
 {% endblock %}
