@@ -23,7 +23,7 @@
         {% if card_faces_data and card_faces_data|length > 1 %}
         <div class="mc-face-toggle d-flex gap-2 mt-2">
             {% for face in card_faces_data %}
-            <img class="mc-img-thumb flex-grow-1" style="width:49%;" src="{{ face.image_uris.normal or face.image_uris.large or top_img }}"
+            <img class="mc-img-thumb flex-grow-1 mc-face-img" src="{{ face.image_uris.normal or face.image_uris.large or top_img }}"
                  alt="{{ face.name or '' }}" loading="lazy">
             {% endfor %}
         </div>
@@ -113,14 +113,14 @@
 
         {% if other_printings %}
         <div class="mt-4">
-            <h3 class="mc-h2">Other printings <span class="mc-muted" style="font-weight:400;">({{ other_printings|length }})</span></h3>
+            <h3 class="mc-h2">Other printings <span class="mc-muted mc-light">({{ other_printings|length }})</span></h3>
             <table class="mc-table mc-printings">
                 <tbody>
                     {% for p in other_printings %}
                     {% set p_img = (p.image_uris.normal or p.image_uris.small) if p.image_uris else None %}
                     <tr>
-                        <td style="width:30px;padding:4px 8px;">
-                            {% if p_img %}<img src="{{ p_img }}" alt="" class="mc-img-thumb" style="width:24px;height:33px;">{% endif %}
+                        <td class="mc-th-narrow">
+                            {% if p_img %}<img src="{{ p_img }}" alt="" class="mc-img-thumb mc-img-thumb-xs">{% endif %}
                         </td>
                         <td>
                             <a href="{{ url_for('view_card_detail', card_id=p.id, from='collection') }}" class="fw-medium">{{ p.set_name }}</a>
@@ -177,12 +177,12 @@
             <div class="mc-add-to mt-3 mc-hair-t pt-3">
                 <span class="mc-label d-block mb-2">Add a copy</span>
                 <div class="d-flex gap-2">
-                    <select id="addToGroup" class="mc-select" style="flex:1;">
+                    <select id="addToGroup" class="mc-select mc-flex-grow">
                         {% for g in add_groups %}
                         <option value="{{ g.id }}" {% if request.args.get('group_id') == g.id|string %}selected{% endif %}>{{ g.name }}</option>
                         {% endfor %}
                     </select>
-                    <select id="addToFinish" class="mc-select" style="width:90px;">
+                    <select id="addToFinish" class="mc-select mc-w-finish">
                         <option value="0">Regular</option>
                         <option value="1">★ Foil</option>
                     </select>
@@ -212,7 +212,7 @@
             <p class="mc-muted small">Not used in any deck.</p>
             {% endif %}
             <div class="d-flex gap-2 mt-2">
-                <a class="mc-btn mc-btn-secondary" style="flex:1;" href="{{ url_for('decks') }}">
+                <a class="mc-btn mc-btn-secondary mc-flex-grow" href="{{ url_for('decks') }}">
                     <i data-lucide="copy" width="15" height="15"></i> Add to deck
                 </a>
             </div>

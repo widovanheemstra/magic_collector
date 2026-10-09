@@ -43,15 +43,15 @@
 
         <label class="mc-label-pair">
             <span>CMC</span>
-            <input type="number" name="cmc" class="mc-input" style="width:64px;" min="0" step="1" value="{{ cmc }}" placeholder="Any">
+            <input type="number" name="cmc" class="mc-input mc-w-cmc" min="0" step="1" value="{{ cmc }}" placeholder="Any">
         </label>
 
         <label class="mc-label-pair">
             <span>Price</span>
-            <input type="number" name="price_min" class="mc-input" style="width:80px;" min="0" step="0.01"
+            <input type="number" name="price_min" class="mc-input mc-w-num" min="0" step="0.01"
                    value="{{ price_min }}" placeholder="min {{ currency_symbol }}0">
             <span class="mc-muted">–</span>
-            <input type="number" name="price_max" class="mc-input" style="width:80px;" min="0" step="0.01"
+            <input type="number" name="price_max" class="mc-input mc-w-num" min="0" step="0.01"
                    value="{{ price_max }}" placeholder="max {{ currency_symbol }}">
         </label>
 

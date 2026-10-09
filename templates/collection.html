@@ -66,18 +66,18 @@
     <table class="mc-table mc-set-table" id="setsTable">
         <thead>
             <tr>
-                <th style="width:28px;"></th>
+                <th></th>
                 <th>Set</th>
-                <th style="width:110px;">Released</th>
-                <th style="width:220px;">Owned <span class="mc-muted" style="text-transform:none;letter-spacing:0;">· most owned ▾</span></th>
-                <th style="width:90px;" class="text-end">Value</th>
+                <th>Released</th>
+                <th>Owned <span class="mc-muted mc-normal">· most owned ▾</span></th>
+                <th class="text-end">Value</th>
             </tr>
         </thead>
         <tbody>
             {% for s in set_rows %}
             {% set pct = (s.owned_unique / s.card_count * 100)|round|int if s.card_count else 100 %}
             <tr data-filter-name="{{ s.name|lower }} {{ s.code|lower }}"
-                onclick="location.href='{{ url_for('view_cards_by_set', set_code=s.code) }}?owned=1';" style="cursor:pointer;">
+                onclick="location.href='{{ url_for('view_cards_by_set', set_code=s.code) }}?owned=1';" class="mc-row-click">
                 <td>
                     {% if s.icon_svg_uri %}
                     <img src="{{ s.icon_svg_uri }}" alt="" class="mc-set-icon" width="18" height="18">
@@ -91,7 +91,7 @@
                 <td>
                     <div class="d-flex align-items-center gap-2">
                         <div class="mc-progress flex-grow-1"><span style="width:{{ pct }}%;"></span></div>
-                        <span class="mc-muted" style="white-space:nowrap;">{{ s.owned_unique }} / {{ s.card_count }}</span>
+                        <span class="mc-muted mc-nowrap">{{ s.owned_unique }} / {{ s.card_count }}</span>
                     </div>
                 </td>
                 <td class="text-end">{% if s.value %}{{ currency_symbol }}{{ "%.2f"|format(s.value) }}{% endif %}</td>
@@ -148,7 +148,7 @@
             </div>
           </div>
           <div class="mt-2" id="newImagePreviewWrap" style="display:none;">
-            <img id="newImagePreview" style="max-height:80px;max-width:160px;object-fit:contain;" class="border p-1">
+            <img id="newImagePreview" class="border p-1 mc-preview-img">
           </div>
         </div>
       </div>

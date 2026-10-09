@@ -81,12 +81,12 @@
 <table class="mc-table mt-2" id="cardsList">
     <thead>
         <tr>
-            <th style="width:220px;">Card</th>
+            <th>Card</th>
             <th>Type</th>
-            <th style="width:130px;">Regular</th>
-            <th style="width:130px;">★ Foil</th>
-            <th class="text-end" style="width:80px;">Price</th>
-            <th class="text-end" style="width:90px;">Value</th>
+            <th>Regular</th>
+            <th>★ Foil</th>
+            <th class="text-end">Price</th>
+            <th class="text-end">Value</th>
         </tr>
     </thead>
     <tbody>
@@ -102,7 +102,7 @@
                         {% set img = card.card_faces[0].image_uris.normal or card.card_faces[0].image_uris.small %}
                     {% endif %}
                     {% if img %}
-                    <img src="{{ img }}" alt="" class="mc-img-thumb" style="width:34px;height:47px;">
+                    <img src="{{ img }}" alt="" class="mc-img-thumb mc-img-thumb-md">
                     {% endif %}
                     <a href="{{ url_for('view_card_detail', card_id=card.id, from='collection', group_id=group.id) }}" class="mc-card-name">{{ card.name }}</a>
                 </div>
@@ -185,7 +185,7 @@
             </div>
           </div>
           <div class="mt-2" id="editImagePreviewWrap" style="{% if not group.image_url %}display:none;{% endif %}">
-            <img id="editImagePreview" src="{{ group.image_url or '' }}" style="max-height:80px;max-width:160px;object-fit:contain;" class="border p-1">
+            <img id="editImagePreview" src="{{ group.image_url or '' }}" class="border p-1 mc-preview-img">
           </div>
         </div>
       </div>

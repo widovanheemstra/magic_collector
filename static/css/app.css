@@ -1121,6 +1121,24 @@ svg.lucide { stroke-width: 1.5; vertical-align: middle; flex: none; }
 .mc-table-scroll { overflow-x: auto; }
 .mc-deck-table { min-width: 620px; }
 
+/* ── Layout utilities (avoid inline styles) ───────────────────────────── */
+
+.mc-flex-grow { flex: 1; }
+.mc-nowrap { white-space: nowrap; }
+.mc-light { font-weight: 400; }
+.mc-w-cmc { width: 64px; }
+.mc-w-num { width: 80px; }
+.mc-w-finish { width: 90px; }
+.mc-w-set { width: 160px; }
+.mc-normal { text-transform: none; letter-spacing: 0; }
+.mc-row-click { cursor: pointer; }
+.mc-preview-img { max-height: 80px; max-width: 160px; object-fit: contain; }
+.mc-img-thumb-xs { width: 24px; height: 33px; }
+.mc-img-thumb-sm { width: 26px; height: 36px; }
+.mc-img-thumb-md { width: 34px; height: 47px; }
+.mc-face-img { width: 49%; }
+.mc-th-narrow { width: 30px; padding: 4px 8px; }
+
 /* ── Home overview (1a/1l) ────────────────────────────────────────────── */
 
 .mc-home-stats {

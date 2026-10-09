@@ -21,7 +21,7 @@
         <input type="search" id="setSearch" placeholder="Filter sets…" oninput="filterSets()" autocomplete="off">
     </div>
     <div class="mc-toolbar-right">
-        <select id="setTypeFilter" class="mc-select" style="width:160px;" onchange="filterSets()">
+        <select id="setTypeFilter" class="mc-select mc-w-set" onchange="filterSets()">
             <option value="">All types</option>
             {% for t in set_types %}<option value="{{ t }}">{{ t }}</option>{% endfor %}
         </select>
@@ -36,13 +36,13 @@
 <table class="mc-table mc-sets-table">
     <thead>
         <tr>
-            <th style="width:32px;"></th>
+            <th></th>
             <th>Set</th>
-            <th style="width:120px;">Type</th>
-            <th style="width:110px;">Released</th>
-            <th class="text-end" style="width:70px;">Cards</th>
-            <th style="width:220px;">Owned</th>
-            <th style="width:110px;">Sync</th>
+            <th>Type</th>
+            <th>Released</th>
+            <th class="text-end">Cards</th>
+            <th>Owned</th>
+            <th>Sync</th>
         </tr>
     </thead>
     <tbody id="setsGrid">
@@ -64,7 +64,7 @@
                 {% if s.owned_qty %}
                 <div class="d-flex align-items-center gap-2">
                     <div class="mc-progress flex-grow-1"><span style="width:{{ pct }}%;"></span></div>
-                    <span class="mc-muted" style="white-space:nowrap;">{{ s.owned_unique }} / {{ s.card_count or s.synced or 0 }}</span>
+                    <span class="mc-muted mc-nowrap">{{ s.owned_unique }} / {{ s.card_count or s.synced or 0 }}</span>
                 </div>
                 {% else %}
                 <span class="mc-muted">—</span>
