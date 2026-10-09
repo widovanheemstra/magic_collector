@@ -19,30 +19,53 @@ app = Flask(__name__)
 
 SUPPORTED_CURRENCIES = ('USD', 'EUR')
 CURRENCY_SYMBOLS = {'USD': '$', 'EUR': '€'}
+SUPPORTED_THEMES = ('light', 'dark', 'system')
+DEFAULT_THEME = 'light'
 
 
 def get_currency():
-    """Currently selected display currency, from the `currency` cookie (default USD)."""
-    value = request.cookies.get('currency', 'USD')
+    """Display currency from settings, falling back to the legacy cookie (default USD)."""
+    value = get_setting('currency') or request.cookies.get('currency', 'USD')
     return value if value in SUPPORTED_CURRENCIES else 'USD'
 
 
+def get_theme():
+    """Display theme from settings: light, dark, or system (default light)."""
+    value = get_setting('theme', DEFAULT_THEME)
+    return value if value in SUPPORTED_THEMES else DEFAULT_THEME
+
+
 @app.context_processor
-def inject_currency():
+def inject_settings():
     currency = get_currency()
-    return {'currency': currency, 'currency_symbol': CURRENCY_SYMBOLS[currency]}
+    return {
+        'currency': currency,
+        'currency_symbol': CURRENCY_SYMBOLS[currency],
+        'theme': get_theme(),
+    }
 
 
 @app.route('/set_currency/<currency>')
 def set_currency(currency):
-    """Persist the display currency choice in a cookie and return to the referring page."""
+    """Persist the display currency choice in settings (cookie kept for compatibility)."""
     currency = currency.upper()
     if currency not in SUPPORTED_CURRENCIES:
         currency = 'USD'
+    set_setting('currency', currency)
     next_url = request.referrer or url_for('index')
     resp = redirect(next_url)
     resp.set_cookie('currency', currency, max_age=60 * 60 * 24 * 365)
     return resp
+
+
+@app.route('/set_theme/<theme>')
+def set_theme(theme):
+    """Persist the display theme choice in settings and return to the referring page."""
+    theme = (theme or '').lower()
+    if theme not in SUPPORTED_THEMES:
+        theme = DEFAULT_THEME
+    set_setting('theme', theme)
+    return redirect(request.referrer or url_for('index'))
 
 # Tile images (collection groups and decks): pre-bundled choices live in
 # GALLERY_DIR (shared), user uploads are saved into their own per-entity folder.
@@ -180,6 +203,33 @@ def sort_collection(collection, sort_mode='collector_number'):
     
     return sorted(collection, key=sort_key)
 DATABASE = os.getenv('DATABASE', 'magic_collector.db')
+
+
+def get_setting(key, default=None):
+    """Read a value from the `settings` key/value table, or `default`."""
+    try:
+        conn = sqlite3.connect(DATABASE)
+        cursor = conn.cursor()
+        cursor.execute('SELECT value FROM settings WHERE key = ?', (key,))
+        row = cursor.fetchone()
+        conn.close()
+        return row[0] if row else default
+    except sqlite3.OperationalError:
+        # settings table not created yet (pre-migration database) — treat as unset.
+        return default
+
+
+def set_setting(key, value):
+    """Upsert a value in the `settings` key/value table."""
+    conn = sqlite3.connect(DATABASE)
+    cursor = conn.cursor()
+    cursor.execute(
+        'INSERT INTO settings (key, value) VALUES (?, ?) '
+        'ON CONFLICT(key) DO UPDATE SET value = excluded.value',
+        (key, None if value is None else str(value)),
+    )
+    conn.commit()
+    conn.close()
 
 # Scryfall requires a custom User-Agent and an explicit Accept header on every
 # request; it rejects the default python-requests User-Agent with a 400
@@ -419,6 +469,14 @@ def init_db():
         )
         cursor.execute('DROP TABLE user_collection')
         cursor.execute('ALTER TABLE user_collection_new RENAME TO user_collection')
+
+    # Key/value app settings (display currency, theme, default group, sync state).
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS settings (
+            key TEXT PRIMARY KEY,
+            value TEXT
+        )
+    ''')
 
     # Indexes for hot lookup paths (cards by name, deck_cards by deck, etc.)
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_cards_name ON cards (name)')

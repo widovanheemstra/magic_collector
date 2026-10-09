@@ -1,0 +1,338 @@
+/* Magic Collector — single application stylesheet.
+ *
+ * Design tokens come from the "Industry" design system in the handoff
+ * (References/design_handoff_magic_collector). Light and dark themes are
+ * selected with a `data-theme` attribute on <html> ("light" or "dark");
+ * "system" is resolved to one of those before first paint.
+ *
+ * Bootstrap 5 is still loaded as the base layer (grid, utilities, JS
+ * components). Component classes here are prefixed `mc-` so they never
+ * collide with Bootstrap's `.btn`, `.card`, `.table`, etc.
+ */
+
+@import url('https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700&family=Barlow+Condensed:wght@400;500;600&display=swap');
+
+/* ── Tokens ───────────────────────────────────────────────────────────── */
+
+:root {
+  --bg: #f2f2f3;
+  --sf: #e9e9ea;
+  --fg: #1d1f20;
+  --mu: #5d5d60;
+  --ac: #5980a6;
+  --act: #416180;
+  --ln: rgba(29, 31, 32, .16);
+  --ln2: rgba(29, 31, 32, .08);
+  --tint: #dce7f2;
+  --onac: #f2f2f3;
+
+  /* Accent ramp (hover/pressed) */
+  --ac-hover: #4c6f92;
+  --ac-active: #416180;
+
+  --shadow-lg: 0 12px 32px rgba(43, 43, 45, .22);
+
+  --font-heading: 'Barlow Condensed', system-ui, sans-serif;
+  --font-body: 'Barlow', system-ui, sans-serif;
+  --font-mono: ui-monospace, Menlo, SFMono-Regular, monospace;
+
+  --card-radius: 4.5%;
+  color-scheme: light;
+}
+
+[data-theme="dark"] {
+  --bg: #15181b;
+  --sf: #1c2024;
+  --fg: #e6e8ea;
+  --mu: #9a9fa5;
+  --ac: #94bce3;
+  --act: #b5d9fd;
+  --ln: rgba(230, 232, 234, .16);
+  --ln2: rgba(230, 232, 234, .07);
+  --tint: #1f2e3d;
+  --onac: #15181b;
+
+  --ac-hover: #a9ccf0;
+  --ac-active: #c8e2fb;
+
+  --shadow-lg: 0 12px 32px rgba(0, 0, 0, .55);
+  color-scheme: dark;
+}
+
+/* ── Base ─────────────────────────────────────────────────────────────── */
+
+*,
+*::before,
+*::after { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--font-body);
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+h1, h2, h3, h4, h5, h6 {
+  font-family: var(--font-heading);
+  font-weight: 600;
+  line-height: 1.12;
+  letter-spacing: -.01em;
+  margin: 0 0 8px;
+}
+
+a { color: var(--act); text-underline-offset: 3px; }
+a:hover { color: var(--ac); }
+img { max-width: 100%; }
+
+:focus { outline: none; }
+:focus-visible { outline: 2px solid var(--ac); outline-offset: 2px; }
+::selection { background: color-mix(in srgb, var(--ac) 30%, transparent); }
+
+svg.lucide { stroke-width: 1.5; vertical-align: middle; flex: none; }
+
+/* ── Typography helpers ───────────────────────────────────────────────── */
+
+.mc-h1 { font-family: var(--font-heading); font-weight: 600; font-size: 34px; line-height: 1.05; }
+.mc-h2 { font-family: var(--font-heading); font-weight: 600; font-size: 20px; }
+.mc-sub { color: var(--mu); font-size: 13px; }
+.mc-muted { color: var(--mu); }
+.mc-label {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: .08em;
+  color: var(--mu);
+}
+.mc-mono { font-family: var(--font-mono); }
+.mc-accent { color: var(--act); }
+.mc-cond { font-family: var(--font-heading); font-weight: 600; }
+
+/* ── Hairlines / dividers ─────────────────────────────────────────────── */
+
+.mc-hair-t { border-top: 1px solid var(--ln2); }
+.mc-hair-b { border-bottom: 1px solid var(--ln2); }
+.mc-divider { height: 1px; border: 0; background: var(--ln); margin: 16px 0; }
+
+/* ── Buttons ──────────────────────────────────────────────────────────── */
+
+.mc-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  cursor: pointer;
+  text-decoration: none;
+  font-family: var(--font-heading);
+  font-weight: 600;
+  font-size: 14px;
+  line-height: 1.2;
+  color: var(--fg);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 0;
+  padding: 7px 12px;
+  white-space: nowrap;
+}
+
+.mc-btn:disabled { opacity: .45; cursor: not-allowed; }
+.mc-btn svg { display: block; }
+
+.mc-btn-primary { background: var(--ac); color: var(--onac); border-color: var(--ac); }
+.mc-btn-primary:hover { background: var(--ac-hover); border-color: var(--ac-hover); color: var(--onac); }
+.mc-btn-primary:active { background: var(--ac-active); border-color: var(--ac-active); }
+
+.mc-btn-secondary { border-color: var(--ln); }
+.mc-btn-secondary:hover { background: color-mix(in srgb, var(--fg) 7%, transparent); color: var(--fg); }
+.mc-btn-secondary:active { background: color-mix(in srgb, var(--fg) 14%, transparent); }
+
+.mc-btn-ghost { color: var(--act); border-color: transparent; }
+.mc-btn-ghost:hover { background: color-mix(in srgb, var(--ac) 12%, transparent); color: var(--act); }
+
+.mc-btn-icon { width: 36px; height: 36px; padding: 0; }
+.mc-btn-sm { padding: 4px 9px; font-size: 13px; }
+.mc-btn-lg { padding: 10px 16px; font-size: 15px; }
+.mc-btn-block { width: 100%; }
+
+/* ── Forms ────────────────────────────────────────────────────────────── */
+
+.mc-field { display: flex; flex-direction: column; gap: 5px; }
+.mc-field > label { font-size: 12px; color: var(--mu); }
+
+.mc-input,
+.mc-select,
+.mc-textarea {
+  width: 100%;
+  min-height: 36px;
+  padding: 6px 10px;
+  font: inherit;
+  font-size: 14px;
+  color: var(--fg);
+  background: var(--sf);
+  border: 1px solid var(--ln);
+  border-radius: 0;
+}
+
+.mc-input:hover,
+.mc-select:hover,
+.mc-textarea:hover { border-color: color-mix(in srgb, var(--fg) 45%, transparent); }
+
+.mc-input:focus-visible,
+.mc-select:focus-visible,
+.mc-textarea:focus-visible {
+  border-color: var(--ac);
+  outline: 2px solid var(--ac);
+  outline-offset: 0;
+}
+
+.mc-textarea { min-height: 120px; resize: vertical; font-family: var(--font-mono); }
+
+.mc-check { display: inline-flex; align-items: center; gap: 8px; cursor: pointer; font-size: 14px; }
+
+/* ── Segmented controls ───────────────────────────────────────────────── */
+
+.mc-seg {
+  display: inline-flex;
+  border: 1px solid var(--ln);
+  border-radius: 0;
+  overflow: hidden;
+}
+
+.mc-seg-opt {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 12px;
+  font-size: 13px;
+  color: var(--fg);
+  text-decoration: none;
+  cursor: pointer;
+  background: transparent;
+  border: 0;
+  font-family: inherit;
+}
+
+.mc-seg-opt + .mc-seg-opt { border-left: 1px solid var(--ln); }
+.mc-seg-opt:hover { background: color-mix(in srgb, var(--fg) 7%, transparent); color: var(--fg); }
+.mc-seg-opt.is-active { background: var(--fg); color: var(--bg); }
+.mc-seg-opt.is-active:hover { color: var(--bg); }
+
+/* ── Tags / chips ─────────────────────────────────────────────────────── */
+
+.mc-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  letter-spacing: .02em;
+  padding: 3px 8px;
+  background: var(--tint);
+  color: var(--act);
+  border-radius: 0;
+}
+.mc-tag-outline { background: transparent; border: 1px solid var(--ln); color: var(--mu); }
+.mc-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  padding: 4px 10px;
+  border: 1px solid var(--ln);
+  color: var(--fg);
+  text-decoration: none;
+  background: transparent;
+}
+.mc-chip:hover { border-color: var(--ac); color: var(--act); }
+.mc-chip.is-active { background: var(--fg); color: var(--bg); border-color: var(--fg); }
+
+/* ── Tables ───────────────────────────────────────────────────────────── */
+
+.mc-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.mc-table th {
+  text-align: left;
+  font-size: 11px;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: var(--mu);
+  font-weight: 500;
+  padding: 8px;
+  border-bottom: 1px solid var(--ln);
+}
+.mc-table td {
+  padding: 8px;
+  border-bottom: 1px solid var(--ln2);
+  vertical-align: middle;
+}
+.mc-table tbody tr:hover { background: color-mix(in srgb, var(--fg) 4%, transparent); }
+.mc-table a { color: inherit; text-decoration: none; }
+.mc-table tbody tr:hover a { color: var(--act); }
+
+/* ── Progress bars ────────────────────────────────────────────────────── */
+
+.mc-progress {
+  height: 4px;
+  width: 100%;
+  background: var(--ln2);
+  border-radius: 0;
+  overflow: hidden;
+}
+.mc-progress > span { display: block; height: 100%; background: var(--ac); }
+
+/* ── Cards & grid ─────────────────────────────────────────────────────── */
+
+.mc-img-card {
+  width: 100%;
+  aspect-ratio: 488 / 680;
+  object-fit: cover;
+  border-radius: var(--card-radius);
+  background: var(--sf);
+  display: block;
+}
+.mc-img-crop {
+  width: 100%;
+  object-fit: cover;
+  border-radius: 0;
+  background: var(--sf);
+  display: block;
+}
+.mc-img-thumb { border-radius: var(--card-radius); background: var(--sf); display: block; }
+
+.mc-grid { display: grid; gap: 18px 16px; }
+.mc-grid-cards { grid-template-columns: repeat(var(--cols, 6), minmax(0, 1fr)); }
+.mc-grid-binders { grid-template-columns: repeat(var(--cols, 6), minmax(0, 1fr)); gap: 20px 18px; }
+
+.mc-card-tile { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.mc-card-tile .mc-card-name {
+  font-size: 12px;
+  color: var(--fg);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.mc-card-tile .mc-card-price { font-size: 11px; color: var(--mu); }
+
+.mc-box { border: 1px solid var(--ln); background: transparent; }
+
+/* ── Stat strip ───────────────────────────────────────────────────────── */
+
+.mc-stats { display: grid; grid-template-columns: repeat(3, 1fr); border: 1px solid var(--ln); }
+.mc-stat { padding: 18px 20px; }
+.mc-stat + .mc-stat { border-left: 1px solid var(--ln); }
+.mc-stat .mc-stat-value {
+  font-family: var(--font-heading);
+  font-weight: 600;
+  font-size: 34px;
+  line-height: 1.05;
+  margin: 4px 0 2px;
+}
+.mc-stat .mc-stat-sub { font-size: 13px; color: var(--mu); }
+
+/* ── Empty states ─────────────────────────────────────────────────────── */
+
+.mc-empty {
+  border: 1px dashed var(--ln);
+  padding: 28px;
+  text-align: center;
+  color: var(--mu);
+  font-size: 14px;
+}
