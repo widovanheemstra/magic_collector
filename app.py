@@ -583,6 +583,13 @@ def init_db():
         # Column already exists, ignore
         pass
 
+    # Add image_card_id column to decks if it doesn't exist (cover art pinning)
+    try:
+        cursor.execute('ALTER TABLE decks ADD COLUMN image_card_id TEXT')
+    except sqlite3.OperationalError:
+        # Column already exists, ignore
+        pass
+
     # Collection groups: every user_collection row belongs to exactly one group.
     # A group is either pinned to a set (set_code non-null, unique) or custom (set_code null).
     cursor.execute('''
@@ -2061,7 +2068,7 @@ def get_best_prices_for_card_names(cursor, card_names, currency='USD'):
 
 @app.route('/decks')
 def decks():
-    """Display all decks"""
+    """Display all decks with ownership stats."""
     try:
         conn = sqlite3.connect(DATABASE)
         cursor = conn.cursor()
@@ -2091,6 +2098,14 @@ def decks():
         # Resolve every card's price once instead of once per deck per card
         prices_by_name = get_best_prices_for_card_names(cursor, all_card_names, get_currency())
 
+        # Copies owned per card name across the whole collection (any printing, both finishes)
+        cursor.execute('''
+            SELECT c.name, COALESCE(SUM(uc.quantity), 0)
+            FROM user_collection uc JOIN cards c ON c.id = uc.card_id
+            GROUP BY c.name
+        ''')
+        owned_by_name = dict(cursor.fetchall())
+
         deck_data = []
         for deck in decks:
             deck_id, name, description, format_name, image_url, created_at, updated_at = deck
@@ -2107,6 +2122,15 @@ def decks():
                 if card_name in prices_by_name
             )
 
+            required = sum(totals.values())
+            owned_copies = sum(
+                min(owned_by_name.get(card_name, 0), quantity)
+                for card_name, quantity in totals.items()
+            )
+            main_total = sum(q for _, q in main_deck)
+            side_total = sum(q for _, q in sideboard)
+            missing = [n for n in totals if n not in owned_by_name]
+
             deck_data.append({
                 'id': deck_id,
                 'name': name,
@@ -2117,7 +2141,13 @@ def decks():
                 'updated_at': updated_at,
                 'main_deck': main_deck,
                 'sideboard': sideboard,
-                'value': value
+                'value': value,
+                'main_total': main_total,
+                'side_total': side_total,
+                'total_cards': required,
+                'owned_copies': owned_copies,
+                'missing': missing,
+                'pct': (owned_copies / required * 100) if required else 0,
             })
 
         conn.close()
@@ -2339,12 +2369,11 @@ def refresh_card(card_id):
 
 @app.route('/deck/<int:deck_id>')
 def deck_view(deck_id):
-    """View individual deck details"""
+    """Deck builder: deck header + inline main/sideboard card tables."""
     try:
         conn = sqlite3.connect(DATABASE)
         cursor = conn.cursor()
 
-        # Get deck info
         cursor.execute('''
             SELECT id, name, description, format, image_url, created_at, updated_at
             FROM decks
@@ -2353,62 +2382,24 @@ def deck_view(deck_id):
         deck = cursor.fetchone()
 
         if not deck:
+            conn.close()
             return "Deck not found", 404
 
         deck_id, name, description, format_name, image_url, created_at, updated_at = deck
-        missing_cards = [c for c in request.args.get('missing', '').split('|') if c]
-        deck_value = get_deck_value(cursor, deck_id, get_currency())
-
-        # Get main deck cards
-        cursor.execute('''
-            SELECT card_name, quantity
-            FROM deck_cards
-            WHERE deck_id = ? AND is_sideboard = FALSE
-            ORDER BY card_name
-        ''', (deck_id,))
-        main_deck = cursor.fetchall()
-        
-        # Get sideboard cards
-        cursor.execute('''
-            SELECT card_name, quantity
-            FROM deck_cards
-            WHERE deck_id = ? AND is_sideboard = TRUE
-            ORDER BY card_name
-        ''', (deck_id,))
-        sideboard = cursor.fetchall()
-        
-        # Check collection quantities for each card
-        def get_collection_quantity(card_name):
-            cursor.execute('''
-                SELECT SUM(quantity) FROM user_collection uc
-                JOIN cards c ON uc.card_id = c.id
-                WHERE c.name = ?
-            ''', (card_name,))
-            result = cursor.fetchone()
-            return result[0] if result[0] else 0
-        
-        # Add collection quantities to main deck
-        main_deck_with_collection = []
-        for card_name, quantity in main_deck:
-            collection_qty = get_collection_quantity(card_name)
-            main_deck_with_collection.append({
-                'name': card_name,
-                'quantity': quantity,
-                'in_collection': collection_qty
-            })
-        
-        # Add collection quantities to sideboard
-        sideboard_with_collection = []
-        for card_name, quantity in sideboard:
-            collection_qty = get_collection_quantity(card_name)
-            sideboard_with_collection.append({
-                'name': card_name,
-                'quantity': quantity,
-                'in_collection': collection_qty
-            })
-        
+        currency = get_currency()
+        deck_value = get_deck_value(cursor, deck_id, currency)
+        rows = get_deck_card_rows(cursor, deck_id, currency)
         conn.close()
-        
+
+        highlight_missing = [c for c in request.args.get('missing', '').split('|') if c]
+        main_cards = [r for r in rows if not r['is_sideboard']]
+        side_cards = [r for r in rows if r['is_sideboard']]
+        main_total = sum(r['quantity'] for r in main_cards)
+        side_total = sum(r['quantity'] for r in side_cards)
+        required = main_total + side_total
+        owned_copies = sum(min(r['in_collection'], r['quantity']) for r in rows if not r['missing'])
+        missing_names = sorted({r['name'] for r in rows if r['missing']})
+
         deck_data = {
             'id': deck_id,
             'name': name,
@@ -2417,14 +2408,100 @@ def deck_view(deck_id):
             'image_url': image_url,
             'created_at': created_at,
             'updated_at': updated_at,
-            'main_deck': main_deck_with_collection,
-            'sideboard': sideboard_with_collection
+            'main_cards': main_cards,
+            'side_cards': side_cards,
+            'main_total': main_total,
+            'side_total': side_total,
+            'total_cards': required,
+            'unique_cards': len(rows),
+            'owned_copies': owned_copies,
+            'missing_names': missing_names,
+            'value': deck_value,
         }
-
-        return render_template('deck_view.html', deck=deck_data, missing_cards=missing_cards, deck_value=deck_value)
+        return render_template('deck_view.html', deck=deck_data,
+                               missing_cards=highlight_missing, currency=currency)
 
     except Exception as e:
         return f"Error loading deck: {str(e)}", 500
+
+@app.route('/deck/<int:deck_id>/cards', methods=['POST'])
+def deck_cards_route(deck_id):
+    """Add/update/remove a card row in a deck (main deck or sideboard), by name.
+
+    quantity <= 0 removes the row; otherwise the (name, sideboard) row quantity is set.
+    Missing card names are synced from Scryfall before being accepted.
+    """
+    try:
+        data = request.get_json() or {}
+        name = (data.get('name') or '').strip()
+        quantity = int(data.get('quantity', 1))
+        is_sideboard = bool(data.get('is_sideboard', False))
+        if not name:
+            return jsonify({'success': False, 'message': 'Card name is required'})
+
+        conn = sqlite3.connect(DATABASE)
+        cursor = conn.cursor()
+        cursor.execute('SELECT name FROM decks WHERE id = ?', (deck_id,))
+        if not cursor.fetchone():
+            conn.close()
+            return jsonify({'success': False, 'message': 'Deck not found'}), 404
+
+        cursor.execute('SELECT COUNT(*) FROM cards WHERE name = ?', (name,))
+        if cursor.fetchone()[0] == 0:
+            still_missing = sync_missing_cards_from_scryfall([name])
+            if still_missing:
+                conn.close()
+                return jsonify({'success': False, 'message': f'"{name}" not found on Scryfall'})
+            cursor.execute('SELECT COUNT(*) FROM cards WHERE name = ?', (name,))
+
+        if quantity <= 0:
+            cursor.execute(
+                'DELETE FROM deck_cards WHERE deck_id = ? AND card_name = ? AND is_sideboard = ?',
+                (deck_id, name, is_sideboard))
+        else:
+            cursor.execute(
+                'UPDATE deck_cards SET quantity = ? WHERE deck_id = ? AND card_name = ? AND is_sideboard = ?',
+                (quantity, deck_id, name, is_sideboard))
+            if cursor.rowcount == 0:
+                cursor.execute(
+                    'INSERT INTO deck_cards (deck_id, card_name, quantity, is_sideboard) VALUES (?, ?, ?, ?)',
+                    (deck_id, name, quantity, is_sideboard))
+
+        # Use the first added card's art as the deck cover until the user changes it.
+        cursor.execute('SELECT image_url FROM decks WHERE id = ?', (deck_id,))
+        if not cursor.fetchone()[0]:
+            cursor.execute('''
+                SELECT image_uris FROM cards
+                WHERE name = ?
+                ORDER BY (image_uris IS NULL OR image_uris = ''), created_at DESC LIMIT 1
+            ''', (name,))
+            pick = cursor.fetchone()
+            img = None
+            if pick:
+                parsed = parse_optional(pick[0]) or {}
+                img = parsed.get('art_crop') or parsed.get('normal')
+            cursor.execute(
+                'UPDATE decks SET image_url = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
+                (img, deck_id))
+        else:
+            cursor.execute('UPDATE decks SET updated_at = CURRENT_TIMESTAMP WHERE id = ?', (deck_id,))
+        conn.commit()
+
+        currency = get_currency()
+        value = get_deck_value(cursor, deck_id, currency)
+        cursor.execute(
+            'SELECT COALESCE(SUM(quantity), 0) FROM deck_cards WHERE deck_id = ? AND is_sideboard = FALSE',
+            (deck_id,))
+        main_total = cursor.fetchone()[0]
+        cursor.execute(
+            'SELECT COALESCE(SUM(quantity), 0) FROM deck_cards WHERE deck_id = ? AND is_sideboard = TRUE',
+            (deck_id,))
+        side_total = cursor.fetchone()[0]
+        conn.close()
+        return jsonify({'success': True, 'main_total': main_total, 'side_total': side_total,
+                        'value': value, 'message': 'Saved'})
+    except Exception as e:
+        return jsonify({'success': False, 'message': f'Error: {str(e)}'})
 
 @app.route('/deck/<int:deck_id>/add_to_collection', methods=['POST'])
 def add_deck_to_collection(deck_id):
@@ -2517,80 +2594,81 @@ def add_deck_to_collection(deck_id):
 
 @app.route('/deck/new')
 def deck_new():
-    """Create new deck page"""
-    deck_data = {
-        'id': None,
-        'name': '',
-        'description': '',
-        'format': '',
-        'image_url': None,
-        'created_at': '',
-        'updated_at': '',
-        'main_deck_text': '',
-        'sideboard_text': ''
-    }
-    return render_template('deck_edit.html', deck=deck_data)
+    """Create a new (empty) deck and open the builder."""
+    conn = sqlite3.connect(DATABASE)
+    cursor = conn.cursor()
+    cursor.execute("INSERT INTO decks (name, description, format) VALUES ('Untitled deck', NULL, NULL)")
+    deck_id = cursor.lastrowid
+    conn.commit()
+    conn.close()
+    return redirect(url_for('deck_view', deck_id=deck_id))
 
 @app.route('/deck/<int:deck_id>/edit')
 def deck_edit(deck_id):
-    """Edit deck page"""
-    try:
-        conn = sqlite3.connect(DATABASE)
-        cursor = conn.cursor()
-        
-        # Get deck info
-        cursor.execute('''
-            SELECT id, name, description, format, image_url, created_at, updated_at
-            FROM decks
-            WHERE id = ?
-        ''', (deck_id,))
-        deck = cursor.fetchone()
+    """Editing now happens inline on the builder page."""
+    return redirect(url_for('deck_view', deck_id=deck_id))
 
-        if not deck:
-            return "Deck not found", 404
+def get_deck_card_rows(cursor, deck_id, currency='USD'):
+    """Rows for the deck builder: per (name, main/side) with best-printing details,
+    ownership by name, price and image for the cover thumbnails."""
+    cursor.execute('''
+        SELECT dc.card_name, dc.quantity, dc.is_sideboard
+        FROM deck_cards dc
+        WHERE dc.deck_id = ?
+        ORDER BY dc.is_sideboard, dc.card_name
+    ''', (deck_id,))
+    entries = cursor.fetchall()
+    if not entries:
+        return []
+    names = list(dict.fromkeys(n for n, _, _ in entries))
+    placeholders = ','.join('?' for _ in names)
 
-        deck_id, name, description, format_name, image_url, created_at, updated_at = deck
-
-        # Get main deck cards
-        cursor.execute('''
-            SELECT card_name, quantity
-            FROM deck_cards
-            WHERE deck_id = ? AND is_sideboard = FALSE
-            ORDER BY card_name
-        ''', (deck_id,))
-        main_deck = cursor.fetchall()
-        
-        # Get sideboard cards
-        cursor.execute('''
-            SELECT card_name, quantity
-            FROM deck_cards
-            WHERE deck_id = ? AND is_sideboard = TRUE
-            ORDER BY card_name
-        ''', (deck_id,))
-        sideboard = cursor.fetchall()
-        
-        conn.close()
-        
-        # Format cards for text areas
-        main_deck_text = '\n'.join([f"{qty} {name}" for name, qty in main_deck])
-        sideboard_text = '\n'.join([f"{qty} {name}" for name, qty in sideboard])
-        
-        deck_data = {
-            'id': deck_id,
+    cursor.execute(f'''
+        SELECT name, type_line, prices, image_uris
+        FROM cards
+        WHERE name IN ({placeholders})
+        ORDER BY name, (image_uris IS NULL OR image_uris = ''), created_at DESC
+    ''', names)
+    best = {}
+    for name, type_line, prices, image_uris in cursor.fetchall():
+        if name in best:
+            continue
+        img = parse_optional(image_uris) or {}
+        best[name] = {
             'name': name,
-            'description': description,
-            'format': format_name,
-            'image_url': image_url,
-            'created_at': created_at,
-            'updated_at': updated_at,
-            'main_deck_text': main_deck_text,
-            'sideboard_text': sideboard_text
+            'type_line': type_line,
+            'price': price_from_json(prices, False, currency),
+            'image': img.get('art_crop') or img.get('normal') or img.get('small'),
         }
 
-        return render_template('deck_edit.html', deck=deck_data)
-        
-    except Exception as e:
-        return f"Error loading deck for edit: {str(e)}", 500
+    cursor.execute(f'''
+        SELECT c.name, COALESCE(SUM(uc.quantity), 0)
+        FROM user_collection uc JOIN cards c ON c.id = uc.card_id
+        WHERE c.name IN ({placeholders})
+        GROUP BY c.name
+    ''', names)
+    owner = dict(cursor.fetchall())
+
+    cursor.execute(f'SELECT DISTINCT name FROM cards WHERE name IN ({placeholders})', names)
+    existing = {r[0] for r in cursor.fetchall()}
+
+    rows = []
+    for name, quantity, is_sideboard in entries:
+        info = best.get(name, {'name': name, 'type_line': '', 'price': None, 'image': None})
+        owned = owner.get(name, 0)
+        missing = name not in existing
+        rows.append({
+            'name': name,
+            'quantity': quantity,
+            'is_sideboard': bool(is_sideboard),
+            'type_line': info['type_line'] or 'Unknown',
+            'price': info['price'],
+            'image': info['image'],
+            'in_collection': owned,
+            'fully_owned': (not missing) and owned >= quantity,
+            'missing': missing,
+        })
+    return rows
 
 def validate_cards_in_database(card_names):
     """Check if all card names exist in the database"""
@@ -2684,6 +2762,27 @@ def update_deck():
 
         if not name:
             return jsonify({'success': False, 'message': 'Deck name is required'})
+
+        # Metadata-only save (edit modal): update the header fields, leave cards alone.
+        if 'main_deck_text' not in data and 'sideboard_text' not in data:
+            if not deck_id:
+                return jsonify({'success': False, 'message': 'Deck ID is required'})
+            conn = sqlite3.connect(DATABASE)
+            cursor = conn.cursor()
+            cursor.execute('''
+                UPDATE decks
+                SET name = ?, description = ?, format = ?, image_url = ?, updated_at = CURRENT_TIMESTAMP
+                WHERE id = ?
+            ''', (name, description, format_name, image_url, deck_id))
+            upload = request.files.get('image_file')
+            if upload and upload.filename:
+                saved_url = save_deck_image(upload, deck_id, name)
+                if saved_url:
+                    cursor.execute('UPDATE decks SET image_url = ? WHERE id = ?', (saved_url, deck_id))
+            conn.commit()
+            conn.close()
+            return jsonify({'success': True, 'message': 'Deck updated', 'deck_id': deck_id,
+                            'missing_cards': []})
 
         # Parse deck lists
         main_deck = parse_decklist_text(main_deck_text)

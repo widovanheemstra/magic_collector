@@ -3,127 +3,56 @@
 {% block title %}Decks - Magic Collector{% endblock %}
 
 {% block content %}
-<div class="row">
-    <div class="col-12">
-        <div class="d-flex justify-content-between align-items-center mb-4">
-            <h1><i class="fas fa-layer-group"></i> My Decks</h1>
-            <a href="/deck/new" class="btn btn-primary">
-                <i class="fas fa-plus"></i> Add New Deck
-            </a>
-        </div>
-
-        {% if decks %}
-            <div class="mb-3">
-                <div class="input-group">
-                    <span class="input-group-text"><i class="fas fa-search"></i></span>
-                    <input type="search" id="deckSearch" class="form-control" placeholder="Filter by name, format, or description..." oninput="filterDecks()" autocomplete="off">
-                    <button class="btn btn-outline-secondary" type="button" onclick="document.getElementById('deckSearch').value=''; filterDecks();">Clear</button>
-                </div>
-                <small class="text-muted"><span id="deckMatchCount">{{ decks|length }}</span> of {{ decks|length }} decks shown</small>
-            </div>
-            <div class="row" id="decksGrid">
-                {% for deck in decks %}
-                <div class="col-md-6 col-lg-4 mb-4 deck-tile" data-deck-name="{{ deck.name|lower }}" data-deck-format="{{ (deck.format or '')|lower }}" data-deck-desc="{{ (deck.description or '')|lower }}">
-                    <a href="/deck/{{ deck.id }}" class="card h-100 deck-card text-decoration-none" style="color: inherit;">
-                        <div class="card-img-top bg-light d-flex justify-content-center align-items-center" style="min-height: 160px; padding: 1rem;">
-                            {% if deck.image_url %}
-                            <img src="{{ deck.image_url }}" alt="{{ deck.name }}" style="max-height: 140px; max-width: 100%; object-fit: contain;">
-                            {% else %}
-                            <i class="fas fa-layer-group fa-4x text-muted"></i>
-                            {% endif %}
-                        </div>
-                        <div class="card-header">
-                            <h5 class="card-title mb-0">{{ deck.name }}</h5>
-                        </div>
-                        <div class="card-body">
-                            {% if deck.description %}
-                                <p class="card-text text-muted">{{ deck.description }}</p>
-                            {% endif %}
-                            {% if deck.format %}
-                                <span class="badge bg-secondary mb-3">{{ deck.format }}</span>
-                            {% endif %}
-                            {% if deck.value %}
-                                <span class="badge bg-success mb-3">{{ currency_symbol }}{{ "%.2f"|format(deck.value) }}</span>
-                            {% endif %}
-
-                            <div class="row text-center">
-                                <div class="col-6">
-                                    <div class="card bg-light">
-                                        <div class="card-body py-2">
-                                            <h6 class="text-primary mb-1">Main Deck</h6>
-                                            <h4 class="text-primary mb-0">
-                                                {% set main_deck_total = deck.main_deck|sum(attribute='1') %}
-                                                {{ main_deck_total }}
-                                            </h4>
-                                            <small class="text-muted">cards</small>
-                                        </div>
-                                    </div>
-                                </div>
-                                <div class="col-6">
-                                    <div class="card bg-light">
-                                        <div class="card-body py-2">
-                                            <h6 class="text-warning mb-1">Sideboard</h6>
-                                            <h4 class="text-warning mb-0">
-                                                {% set sideboard_total = deck.sideboard|sum(attribute='1') %}
-                                                {{ sideboard_total }}
-                                            </h4>
-                                            <small class="text-muted">cards</small>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                        <div class="card-footer text-muted">
-                            <small>
-                                Created: {{ deck.created_at|strftime('%Y-%m-%d') }}
-                                {% if deck.updated_at != deck.created_at %}
-                                    | Updated: {{ deck.updated_at|strftime('%Y-%m-%d') }}
-                                {% endif %}
-                            </small>
-                        </div>
-                    </a>
-                </div>
-                {% endfor %}
-            </div>
-        {% else %}
-            <div class="text-center py-5">
-                <i class="fas fa-layer-group fa-3x text-muted mb-3"></i>
-                <h3 class="text-muted">No decks yet</h3>
-                <p class="text-muted">Create your first deck to get started!</p>
-                <a href="/deck/new" class="btn btn-primary">
-                    <i class="fas fa-plus"></i> Add Your First Deck
-                </a>
-            </div>
-        {% endif %}
+<div class="mc-page-head">
+    <div>
+        <h1 class="mc-h1 mb-1">Decks</h1>
+        <p class="mc-sub mb-0">{{ "{:,}".format(decks|length) }} deck{{ 's' if decks|length != 1 else '' }}</p>
+    </div>
+    <div class="mc-page-actions">
+        <a class="mc-btn mc-btn-primary" href="{{ url_for('deck_new') }}">
+            <i data-lucide="plus" width="15" height="15"></i> New deck
+        </a>
     </div>
 </div>
 
-
-<script>
-function filterDecks() {
-    const q = document.getElementById('deckSearch').value.trim().toLowerCase();
-    let shown = 0;
-    document.querySelectorAll('#decksGrid .deck-tile').forEach(tile => {
-        const match = !q
-            || tile.dataset.deckName.includes(q)
-            || tile.dataset.deckFormat.includes(q)
-            || tile.dataset.deckDesc.includes(q);
-        tile.style.display = match ? '' : 'none';
-        if (match) shown++;
-    });
-    const counter = document.getElementById('deckMatchCount');
-    if (counter) counter.textContent = shown;
-}
-</script>
-
-<style>
-.deck-card {
-    transition: transform 0.2s ease-in-out, box-shadow 0.2s ease-in-out;
-}
-
-.deck-card:hover {
-    transform: translateY(-5px);
-    box-shadow: 0 8px 25px rgba(0,0,0,0.15);
-}
-</style>
+{% if decks %}
+<div class="mc-decks-grid">
+    {% for d in decks %}
+    <a class="mc-deck-card" href="{{ url_for('deck_view', deck_id=d.id) }}">
+        <div class="mc-deck-cover{% if not d.image_url %} mc-deck-cover-empty{% endif %}"
+             {% if d.image_url %}style="background-image:url('{{ d.image_url }}');"{% endif %}>
+            {% if not d.image_url %}<span class="mc-deck-initial">{{ d.name[:1] }}</span>{% endif %}
+        </div>
+        <div class="mc-deck-body">
+            <div class="mc-deck-name">{{ d.name }}</div>
+            <div class="mc-deck-meta">
+                {{ d.main_total }} main{% if d.side_total %} · {{ d.side_total }} side{% endif %}
+                {% if d.format %} · {{ d.format }}{% endif %}
+            </div>
+            <div class="mc-deck-progress">
+                <div class="mc-progress flex-grow-1">
+                    <span style="width:{{ d.pct }}%;" {% if d.pct >= 100 %}class="is-complete"{% endif %}></span>
+                </div>
+                <span class="mc-deck-owned">{{ d.owned_copies }}/{{ d.total_cards }}</span>
+            </div>
+            <div class="mc-deck-foot">
+                <span class="mc-deck-value">
+                    {% if d.value %}{{ currency_symbol }}{{ "%.2f"|format(d.value) }}{% endif %}
+                </span>
+                <span class="mc-deck-edited">
+                    {% if d.missing %}{{ d.missing|length }} missing{% else %}Edited {{ (d.updated_at or '')[:10] }}{% endif %}
+                </span>
+            </div>
+        </div>
+    </a>
+    {% endfor %}
+</div>
+{% else %}
+<div class="mc-empty">
+    <p class="mb-2">No decks yet.</p>
+    <a class="mc-btn mc-btn-primary" href="{{ url_for('deck_new') }}">
+        <i data-lucide="plus" width="15" height="15"></i> New deck
+    </a>
+</div>
+{% endif %}
 {% endblock %}

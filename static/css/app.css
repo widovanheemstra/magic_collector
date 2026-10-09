@@ -830,3 +830,119 @@ svg.lucide { stroke-width: 1.5; vertical-align: middle; flex: none; }
 
 .mc-btn-danger { background: transparent; border-color: #b4554f; color: #b4554f; }
 .mc-btn-danger:hover { background: #b4554f; color: #fff; }
+
+/* ── Decks overview ───────────────────────────────────────────────────── */
+
+.mc-decks-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 14px;
+  max-width: 1240px;
+}
+.mc-deck-card {
+  display: block;
+  border: 1px solid var(--ln);
+  color: var(--fg);
+  text-decoration: none;
+  background: var(--bg);
+}
+.mc-deck-card:hover { border-color: var(--ac); color: var(--fg); }
+.mc-deck-cover {
+  height: 128px;
+  background-color: var(--sf);
+  background-size: cover;
+  background-position: center 24%;
+  border-bottom: 1px solid var(--ln);
+  position: relative;
+}
+.mc-deck-cover-empty::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background:
+    repeating-linear-gradient(45deg, transparent 0 10px, color-mix(in srgb, var(--fg) 4%, transparent) 10px 11px);
+}
+.mc-deck-initial {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  font-family: var(--font-heading);
+  font-size: 44px;
+  color: var(--mu);
+}
+.mc-deck-body { padding: 10px 12px 12px; display: flex; flex-direction: column; gap: 4px; }
+.mc-deck-name {
+  font-family: var(--font-heading);
+  font-weight: 600;
+  font-size: 17px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.mc-deck-meta { font-size: 12px; color: var(--mu); }
+.mc-deck-progress { display: flex; align-items: center; gap: 8px; }
+.mc-deck-owned { font-size: 12px; color: var(--mu); white-space: nowrap; }
+.mc-deck-foot { display: flex; justify-content: space-between; align-items: baseline; margin-top: 2px; }
+.mc-deck-value { font-family: var(--font-heading); font-weight: 600; font-size: 15px; color: var(--act); }
+.mc-deck-edited { font-size: 11.5px; color: var(--mu); }
+
+.mc-progress {
+  height: 6px;
+  background: color-mix(in srgb, var(--fg) 10%, transparent);
+  overflow: hidden;
+}
+.mc-progress > span {
+  display: block;
+  height: 100%;
+  background: var(--ac);
+}
+.mc-progress > span.is-complete { background: #3f8f5c; }
+
+/* ── Deck builder ─────────────────────────────────────────────────────── */
+
+.mc-quick-add { display: flex; align-items: center; gap: 8px; }
+.mc-quick-add .mc-search { width: 320px; }
+
+.mc-builder {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 22px;
+  align-items: start;
+}
+@media (max-width: 1023.98px) { .mc-builder { grid-template-columns: 1fr; } }
+.mc-builder-col { min-width: 0; }
+.mc-builder-col .mc-h2 > .mc-muted { font-size: 13px; font-weight: 400; }
+
+.mc-deck-table { margin-top: 8px; }
+.mc-deck-table .mc-row-qty { width: 116px; }
+.mc-deck-table .mc-row-actions { width: 72px; text-align: right; white-space: nowrap; }
+.deck-row.is-missing { background: color-mix(in srgb, #b4554f 7%, transparent); }
+.mc-row-name { min-width: 0; }
+.mc-row-name .mc-card-name { display: block; white-space: normal; }
+
+.mc-icobtn {
+  width: 26px;
+  height: 26px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--mu);
+  cursor: pointer;
+  display: inline-grid;
+  place-items: center;
+  padding: 0;
+}
+.mc-icobtn:hover { border-color: var(--ln); color: var(--fg); background: var(--sf); }
+
+.mc-tag {
+  display: inline-block;
+  font-size: 11px;
+  padding: 2px 7px;
+  background: var(--tint);
+  color: var(--act);
+  border: 1px solid transparent;
+  white-space: nowrap;
+}
+.mc-tag-outline { background: transparent; border-color: var(--ln); color: var(--mu); }
+.mc-tag-ok { background: color-mix(in srgb, #3f8f5c 14%, transparent); color: #3f8f5c; }
+.mc-tag-danger { background: color-mix(in srgb, #b4554f 12%, transparent); color: #b4554f; }
