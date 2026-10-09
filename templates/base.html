@@ -272,6 +272,37 @@
             });
         })();
 
+        /* ── Card hover preview (desktop only) ───────────────────────────
+         * Follow-cursor enlarged card image for elements with a
+         * data-preview-src attribute (card tiles, deck rows). */
+        (function() {
+            if (!window.matchMedia || !window.matchMedia('(pointer: fine)').matches) return;
+            var box = document.createElement('div');
+            box.className = 'mc-hover-preview';
+            var img = document.createElement('img');
+            img.alt = '';
+            box.appendChild(img);
+            document.body.appendChild(box);
+            var M = 16, W = 236;
+
+            document.addEventListener('mouseover', function(e) {
+                var t = e.target.closest ? e.target.closest('[data-preview-src]') : null;
+                if (!t) return;
+                var src = t.getAttribute('data-preview-src');
+                if (src) { img.src = src; box.style.display = 'block'; }
+            });
+            document.addEventListener('mousemove', function(e) {
+                if (box.style.display === 'none') return;
+                var x = e.clientX + M;
+                var y = e.clientY + M;
+                if (x + W > window.innerWidth - M) x = e.clientX - W - M;
+                box.style.transform = 'translate(' + x + 'px,' + y + 'px)';
+            });
+            document.addEventListener('mouseout', function(e) {
+                if (e.target.closest && e.target.closest('[data-preview-src]')) box.style.display = 'none';
+            });
+        })();
+
         /* ── Existing app helpers ───────────────────────────────────────── */
         function fetchSets() {
             fetch('/fetch_sets', { method: 'POST' })

@@ -63,6 +63,7 @@
     <section class="mc-builder-col">
         <h2 class="mc-h2">Main deck <span class="mc-muted" id="mainCount">{{ deck.main_total }} cards</span></h2>
         {% if deck.main_cards %}
+        <div class="mc-table-scroll">
         <table class="mc-table mc-deck-table">
             <tbody id="mainTableBody">
                 {% for c in deck.main_cards %}
@@ -78,7 +79,7 @@
                     <td>
                         <div class="d-flex align-items-center gap-2">
                             {% if c.image %}
-                            <img src="{{ c.image }}" alt="" class="mc-img-thumb" style="width:26px;height:36px;">
+                            <img src="{{ c.image }}" alt="" class="mc-img-thumb" style="width:26px;height:36px;" {% if c.image %}data-preview-src="{{ c.image }}"{% endif %}>
                             {% endif %}
                             <div class="mc-row-name">
                                 <span class="mc-card-name">{{ c.name }}</span>
@@ -107,6 +108,7 @@
                 {% endfor %}
             </tbody>
         </table>
+        </div>
         {% else %}
         <p class="mc-muted small">No cards in the main deck yet. Search above to add one.</p>
         {% endif %}
@@ -115,6 +117,7 @@
     <section class="mc-builder-col">
         <h2 class="mc-h2">Sideboard <span class="mc-muted" id="sideCount">{{ deck.side_total }} cards</span></h2>
         {% if deck.side_cards %}
+        <div class="mc-table-scroll">
         <table class="mc-table mc-deck-table">
             <tbody id="sideTableBody">
                 {% for c in deck.side_cards %}
@@ -130,7 +133,7 @@
                     <td>
                         <div class="d-flex align-items-center gap-2">
                             {% if c.image %}
-                            <img src="{{ c.image }}" alt="" class="mc-img-thumb" style="width:26px;height:36px;">
+                            <img src="{{ c.image }}" alt="" class="mc-img-thumb" style="width:26px;height:36px;" {% if c.image %}data-preview-src="{{ c.image }}"{% endif %}>
                             {% endif %}
                             <div class="mc-row-name">
                                 <span class="mc-card-name">{{ c.name }}</span>
@@ -159,6 +162,7 @@
                 {% endfor %}
             </tbody>
         </table>
+        </div>
         {% else %}
         <p class="mc-muted small">No cards in the sideboard yet.</p>
         {% endif %}

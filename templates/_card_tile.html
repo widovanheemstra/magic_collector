@@ -10,7 +10,7 @@
      data-price-f="{{ '%.2f'|format(card.price_foil or 0) }}"
      data-filter-name="{{ card.name|lower }}">
     <div class="mc-card-frame">
-        <a class="mc-card-link" href="{{ link_url }}">
+        <a class="mc-card-link" href="{{ link_url }}" {% if img %}data-preview-src="{{ img }}"{% endif %}>
             {% if img %}
             <img class="mc-img-card" src="{{ img }}" alt="{{ card.name }}" loading="lazy">
             {% else %}

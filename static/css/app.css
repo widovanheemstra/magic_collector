@@ -529,6 +529,16 @@ svg.lucide { stroke-width: 1.5; vertical-align: middle; flex: none; }
     align-self: start;
   }
   .mc-tab-add:hover { background: var(--ac-hover); color: var(--onac); }
+
+  .mc-h1 { font-size: 24px; }
+  .mc-page-head { flex-direction: column; gap: 12px; }
+  .mc-page-actions { flex-wrap: wrap; }
+  .mc-quick-add { flex: 1; min-width: 0; }
+  .mc-quick-add .mc-search { width: auto; flex: 1; min-width: 0; }
+  .mc-search { width: 100%; }
+  .mc-home-actions { align-items: stretch; }
+  .mc-home-cols { grid-template-columns: 1fr; }
+  .mc-builder { grid-template-columns: 1fr; }
 }
 
 @media (min-width: 1024px) and (max-width: 1279.98px) {
@@ -1089,6 +1099,27 @@ svg.lucide { stroke-width: 1.5; vertical-align: middle; flex: none; }
 
 .mc-settings-danger { border-color: color-mix(in srgb, #b4554f 55%, transparent); }
 .mc-settings-danger .mc-h2 { color: #b4554f; }
+
+/* ── Card hover preview (desktop) ─────────────────────────────────────── */
+
+.mc-hover-preview {
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 60;
+  pointer-events: none;
+  width: 236px;
+  display: none;
+  will-change: transform;
+  border-radius: var(--card-radius);
+  filter: drop-shadow(0 12px 26px rgba(0, 0, 0, 0.35));
+}
+.mc-hover-preview img { display: block; width: 100%; border-radius: var(--card-radius); }
+
+/* ── Horizontal table scroll (narrow screens) ─────────────────────────── */
+
+.mc-table-scroll { overflow-x: auto; }
+.mc-deck-table { min-width: 620px; }
 
 /* ── Home overview (1a/1l) ────────────────────────────────────────────── */
 
