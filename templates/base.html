@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="{{ theme if theme in ('light', 'dark') else 'light' }}">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -11,13 +11,15 @@
     <link rel="manifest" href="{{ url_for('static', filename='site.webmanifest') }}">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
-    <!-- Active theme stylesheet — href set synchronously before first paint -->
-    <link id="appThemeStylesheet" rel="stylesheet" href="">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}">
     <script>
+        /* Resolve a "system" theme to light/dark before first paint and apply it. */
         (function() {
-            var themes = { ice: '/static/css/kaldheim-theme.css', dark: '/static/css/kaldheim-dark-theme.css' };
-            var saved = localStorage.getItem('appTheme');
-            if (saved && themes[saved]) document.getElementById('appThemeStylesheet').href = themes[saved];
+            var theme = {{ theme|tojson }};
+            if (theme === 'system') {
+                var dark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+                document.documentElement.setAttribute('data-theme', dark ? 'dark' : 'light');
+            }
         })();
     </script>
     <script>
@@ -89,78 +91,6 @@
         .set-card:hover { transform: translateY(-5px); }
         .mana-symbol { width: 20px; height: 20px; display: inline-block; margin-right: 2px; }
 
-        /* ── Theme picker dropdown ────────────────────────────────────────── */
-        .theme-picker { position: relative; }
-
-        .theme-picker-btn {
-            background: none;
-            border: 1px solid rgba(255,255,255,.25);
-            border-radius: 6px;
-            color: rgba(255,255,255,.85);
-            cursor: pointer;
-            padding: 5px 11px;
-            font-size: .85rem;
-            display: flex;
-            align-items: center;
-            gap: 6px;
-            transition: border-color .15s, background .15s;
-            white-space: nowrap;
-        }
-        .theme-picker-btn:hover {
-            border-color: rgba(255,255,255,.55);
-            background: rgba(255,255,255,.08);
-        }
-        .theme-picker-btn .tp-caret {
-            font-size: .65rem;
-            opacity: .7;
-            transition: transform .2s;
-        }
-        .theme-picker.open .tp-caret { transform: rotate(180deg); }
-
-        .theme-menu {
-            display: none;
-            position: absolute;
-            right: 0;
-            top: calc(100% + 6px);
-            min-width: 180px;
-            background: #1c2333;
-            border: 1px solid rgba(255,255,255,.12);
-            border-radius: 9px;
-            padding: 6px;
-            box-shadow: 0 10px 32px rgba(0,0,0,.55);
-            z-index: 9999;
-        }
-        .theme-picker.open .theme-menu { display: block; }
-
-        .theme-option {
-            display: flex;
-            align-items: center;
-            gap: 9px;
-            padding: 8px 11px;
-            border-radius: 6px;
-            cursor: pointer;
-            color: rgba(255,255,255,.8);
-            font-size: .87rem;
-            transition: background .12s, color .12s;
-            border: 1px solid transparent;
-        }
-        .theme-option:hover {
-            background: rgba(255,255,255,.08);
-            color: #fff;
-        }
-        .theme-option.active {
-            background: rgba(255,255,255,.1);
-            color: #fff;
-            border-color: rgba(255,255,255,.18);
-        }
-        .theme-option .tp-swatch {
-            width: 14px;
-            height: 14px;
-            border-radius: 50%;
-            flex-shrink: 0;
-            border: 1px solid rgba(255,255,255,.2);
-        }
-
         /* ── Collection group image gallery picker ─────────────────────── */
         .group-gallery-grid {
             max-height: 260px;
@@ -176,112 +106,77 @@
     </style>
 </head>
 <body>
-    <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
-        <div class="container d-flex align-items-center">
-            <a class="navbar-brand d-flex align-items-center me-3" href="/">
-                <img src="{{ url_for('static', filename='favicon-32x32.png') }}" alt="Magic Collector" width="28" height="28" class="me-2">
-                Magic Collector
-            </a>
-            <div class="navbar-nav me-auto">
-                <a class="nav-link" href="/">Home</a>
-                <a class="nav-link" href="/collection">My Collection</a>
-                <a class="nav-link" href="/decks">Decks</a>
-                <a class="nav-link" href="/sets">All Sets</a>
-                <a class="nav-link" href="/search">Search</a>
-                <a class="nav-link" href="/settings">Settings</a>
-            </div>
-
-            <!-- Currency picker -->
-            <div class="btn-group btn-group-sm ms-2" role="group" aria-label="Currency">
-                <a href="{{ url_for('set_currency', currency='USD') }}" data-no-spa
-                   class="btn btn-outline-light {% if currency == 'USD' %}active{% endif %}">USD ($)</a>
-                <a href="{{ url_for('set_currency', currency='EUR') }}" data-no-spa
-                   class="btn btn-outline-light {% if currency == 'EUR' %}active{% endif %}">EUR (€)</a>
-            </div>
-
-            <!-- Theme picker -->
-            <div class="theme-picker ms-2" id="themePicker">
-                <button class="theme-picker-btn" id="themePickerBtn" aria-haspopup="true" aria-expanded="false">
-                    <i class="fas fa-palette" style="font-size:.8rem;opacity:.8;"></i>
-                    <span id="themePickerLabel">Theme</span>
-                    <span class="tp-caret">▼</span>
-                </button>
-                <div class="theme-menu" role="menu">
-                    <div class="theme-option" role="menuitem" data-theme="default" onclick="setTheme('default')">
-                        <span class="tp-swatch" style="background: linear-gradient(135deg,#6c757d,#adb5bd);"></span>
-                        Default
-                    </div>
-                    <div class="theme-option" role="menuitem" data-theme="ice" onclick="setTheme('ice')">
-                        <span class="tp-swatch" style="background: linear-gradient(135deg,#6BB5E3,#B8E6FF);"></span>
-                        Kaldheim Ice
-                    </div>
-                    <div class="theme-option" role="menuitem" data-theme="dark" onclick="setTheme('dark')">
-                        <span class="tp-swatch" style="background: linear-gradient(135deg,#0a0e16,#9fdcef);"></span>
-                        Kaldheim Dark
-                    </div>
-                </div>
-            </div>
-        </div>
-    </nav>
-
-    <div class="container mt-4" id="spaContent">
-        {% block content %}{% endblock %}
+    <div class="mc-shell">
+        {% include "_sidebar.html" %}
+        <main class="mc-main" id="spaContent">
+            {% block content %}{% endblock %}
+        </main>
     </div>
+    {% include "_tabbar.html" %}
+    {% include "_add_cards_modal.html" %}
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/lucide@0/dist/umd/lucide.min.js"></script>
     <script>
-        /* ── Global theme switcher ──────────────────────────────────────── */
-        const THEMES = {
-            default: { label: 'Default',       href: '' },
-            ice:     { label: 'Kaldheim Ice',  href: '/static/css/kaldheim-theme.css' },
-            dark:    { label: 'Kaldheim Dark', href: '/static/css/kaldheim-dark-theme.css' },
-        };
+        /* ── Lucide icons ─────────────────────────────────────────────────
+         * Replace <i data-lucide="..."> placeholders with inline SVGs.
+         * Called on load and after every SPA content swap. */
+        function renderLucideIcons() {
+            if (window.lucide && lucide.createIcons) {
+                lucide.createIcons();
+            }
+        }
+        document.addEventListener('DOMContentLoaded', function() { renderLucideIcons(); });
+    </script>
+    <script>
+        /* ── Quick find (⌘K / sidebar field) ─────────────────────────────
+         * Autocomplete card names from /api/card_names; Enter jumps to the
+         * card detail page for the exact name (via /api/card_by_name). */
+        function initQuickFind() {
+            const input = document.getElementById('quickFind');
+            if (!input) return;
+            const list = document.getElementById('quickFindList');
+            let timer = null;
 
-        function setTheme(key) {
-            const theme = THEMES[key] || THEMES.default;
-            const link = document.getElementById('appThemeStylesheet');
-            link.href = theme.href;
-            link.disabled = !theme.href;
-            document.getElementById('themePickerLabel').textContent = theme.label;
-            // Mark active option
-            document.querySelectorAll('.theme-option').forEach(el => {
-                el.classList.toggle('active', el.dataset.theme === key);
+            input.addEventListener('input', function() {
+                clearTimeout(timer);
+                const q = input.value.trim();
+                if (q.length < 2) { if (list) list.innerHTML = ''; return; }
+                timer = setTimeout(async function() {
+                    try {
+                        const r = await fetch('/api/card_names?q=' + encodeURIComponent(q));
+                        const data = await r.json();
+                        if (list) list.innerHTML = (data.names || []).map(function(n) {
+                            return '<option value="' + n.replace(/"/g, '&quot;') + '">';
+                        }).join('');
+                    } catch (e) { /* ignore */ }
+                }, 150);
             });
-            localStorage.setItem('appTheme', key);
-            closeThemePicker();
+
+            function go(name) {
+                if (!name) return;
+                fetch('/api/card_by_name?name=' + encodeURIComponent(name))
+                    .then(function(r) { return r.ok ? r.json() : null; })
+                    .then(function(card) {
+                        if (card && card.id) window.location.href = '/card/' + card.id;
+                    });
+            }
+
+            input.addEventListener('keydown', function(e) {
+                if (e.key === 'Enter') { e.preventDefault(); go(input.value.trim()); }
+            });
         }
 
-        function closeThemePicker() {
-            const picker = document.getElementById('themePicker');
-            picker.classList.remove('open');
-            document.getElementById('themePickerBtn').setAttribute('aria-expanded', 'false');
-        }
-
-        // Toggle open/close
-        document.getElementById('themePickerBtn').addEventListener('click', function(e) {
-            e.stopPropagation();
-            const picker = document.getElementById('themePicker');
-            const opening = !picker.classList.contains('open');
-            picker.classList.toggle('open', opening);
-            this.setAttribute('aria-expanded', String(opening));
-        });
-
-        // Close when clicking outside
-        document.addEventListener('click', function(e) {
-            if (!document.getElementById('themePicker').contains(e.target)) {
-                closeThemePicker();
+        // ⌘K / Ctrl+K focuses the quick-find field from anywhere.
+        document.addEventListener('keydown', function(e) {
+            if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+                e.preventDefault();
+                const input = document.getElementById('quickFind');
+                if (input) { input.focus(); input.select(); }
             }
         });
 
-        // Sync picker label and active state (href is already set by the head script)
-        document.addEventListener('DOMContentLoaded', function() {
-            const saved = localStorage.getItem('appTheme') || 'default';
-            const theme = THEMES[saved] || THEMES.default;
-            document.getElementById('themePickerLabel').textContent = theme.label;
-            document.querySelectorAll('.theme-option').forEach(el => {
-                el.classList.toggle('active', el.dataset.theme === saved);
-            });
-        });
+        document.addEventListener('DOMContentLoaded', initQuickFind);
 
         /* ── SPA Router ─────────────────────────────────────────────────── *
          *  Intercepts same-origin link clicks and swaps #spaContent only,  *
@@ -340,6 +235,7 @@
                         // (enforced by the origin check in the click handler below)
                         container.innerHTML = newEl.innerHTML; // nosec
                         runScripts(container);
+                        renderLucideIcons();
                         window.scrollTo(0, 0);
                     })
                     .catch(function() { window.location.href = url; });
@@ -364,6 +260,87 @@
 
             window.addEventListener('popstate', function() {
                 navigate(window.location.pathname + window.location.search + window.location.hash, false);
+            });
+        })();
+
+        /* ── Card hover popup (desktop only) ────────────────────────────*
+         * Design-faithful preview: a 290px panel beside the hovered card *
+         * with the card image plus basic details (name, type line, set,  *
+         * rarity, number, price). Elements opt in with data-preview-src  *
+         * and optional data-preview-* attributes.                        *
+         * ─────────────────────────────────────────────────────────────── */
+        (function() {
+            if (!window.matchMedia || !window.matchMedia('(pointer: fine)').matches) return;
+            var pop = document.createElement('div');
+            pop.className = 'mc-hover-pop';
+            pop.innerHTML =
+                '<img data-k="img" alt="">' +
+                '<div class="mc-hover-pop-head">' +
+                    '<span class="mc-hover-pop-name" data-k="name"></span>' +
+                    '<span class="mc-hover-pop-type" data-k="type"></span>' +
+                '</div>' +
+                '<div class="mc-hover-pop-meta">' +
+                    '<div class="mc-hp-row" data-k="setRow"><span>Set</span><span data-k="set"></span></div>' +
+                    '<div class="mc-hp-row" data-k="rarRow"><span>Rarity</span><span data-k="rar"></span></div>' +
+                    '<div class="mc-hp-row" data-k="numRow"><span>Number</span><span data-k="num"></span></div>' +
+                    '<div class="mc-hp-row" data-k="priceRow"><span>Price</span><span data-k="price"></span></div>' +
+                '</div>';
+            document.body.appendChild(pop);
+
+            var W = 290, M = 14;
+            var img = pop.querySelector('[data-k="img"]');
+
+            function hoverCard(e) {
+                return e.target.closest ? e.target.closest('[data-preview-src]') : null;
+            }
+            function setDetail(key, value, rowKey) {
+                pop.querySelector('[data-k="' + key + '"]').textContent = value;
+                if (rowKey) {
+                    pop.querySelector('[data-k="' + rowKey + '"]').setAttribute('data-empty', value ? 'false' : 'true');
+                }
+            }
+
+            document.addEventListener('mouseover', function(e) {
+                var t = hoverCard(e);
+                if (!t || !t.getAttribute('data-preview-src')) return;
+                // Mouseover also fires when moving between children of the
+                // same card; only (re)fill when actually arriving at a card.
+                if (e.relatedTarget && hoverCard({ target: e.relatedTarget }) === t) return;
+
+                img.src = t.getAttribute('data-preview-src');
+                setDetail('name', t.getAttribute('data-preview-name') || '');
+                var type = t.getAttribute('data-preview-type') || '';
+                var typeEl = pop.querySelector('[data-k="type"]');
+                typeEl.textContent = type;
+                typeEl.style.display = type ? '' : 'none';
+                setDetail('set', t.getAttribute('data-preview-set') || '', 'setRow');
+                setDetail('rar', t.getAttribute('data-preview-rar') || '', 'rarRow');
+                setDetail('num', t.getAttribute('data-preview-num') || '', 'numRow');
+                setDetail('price', t.getAttribute('data-preview-price') || '', 'priceRow');
+
+                // Anchor to the right of the card, flipping to the left at
+                // the viewport edge; vertically centered on the card.
+                var r = t.getBoundingClientRect();
+                var x = r.right + M;
+                if (x + W > window.innerWidth - M) x = r.left - W - M;
+
+                pop.style.visibility = 'hidden';
+                pop.style.display = 'flex';
+                var h = pop.offsetHeight;
+                var y = r.top + (r.height / 2) - (h / 2);
+                if (y < M) y = M;
+                if (y + h > window.innerHeight - M) y = Math.max(M, window.innerHeight - h - M);
+                pop.style.left = x + 'px';
+                pop.style.top = y + 'px';
+                pop.style.visibility = 'visible';
+            });
+
+            document.addEventListener('mouseout', function(e) {
+                var t = hoverCard(e);
+                if (!t) return;
+                // Hide only when leaving the card for anything outside it.
+                var rel = e.relatedTarget ? hoverCard({ target: e.relatedTarget }) : null;
+                if (t !== rel) pop.style.display = 'none';
             });
         })();
 

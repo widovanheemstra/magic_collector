@@ -5,6 +5,7 @@ import re
 import requests
 import os
 from flask import Flask, render_template, request, jsonify, redirect, url_for, Response, stream_with_context
+from urllib.parse import urlencode
 from dotenv import load_dotenv
 
 # Load environment variables from .env file
@@ -19,30 +20,133 @@ app = Flask(__name__)
 
 SUPPORTED_CURRENCIES = ('USD', 'EUR')
 CURRENCY_SYMBOLS = {'USD': '$', 'EUR': '€'}
+SUPPORTED_THEMES = ('light', 'dark', 'system')
+DEFAULT_THEME = 'light'
 
 
 def get_currency():
-    """Currently selected display currency, from the `currency` cookie (default USD)."""
-    value = request.cookies.get('currency', 'USD')
+    """Display currency from settings, falling back to the legacy cookie (default USD)."""
+    value = get_setting('currency') or request.cookies.get('currency', 'USD')
     return value if value in SUPPORTED_CURRENCIES else 'USD'
 
 
+def get_theme():
+    """Display theme from settings: light, dark, or system (default light)."""
+    value = get_setting('theme', DEFAULT_THEME)
+    return value if value in SUPPORTED_THEMES else DEFAULT_THEME
+
+
 @app.context_processor
-def inject_currency():
+def inject_settings():
     currency = get_currency()
-    return {'currency': currency, 'currency_symbol': CURRENCY_SYMBOLS[currency]}
+    return {
+        'currency': currency,
+        'currency_symbol': CURRENCY_SYMBOLS[currency],
+        'theme': get_theme(),
+    }
 
 
 @app.route('/set_currency/<currency>')
 def set_currency(currency):
-    """Persist the display currency choice in a cookie and return to the referring page."""
+    """Persist the display currency choice in settings (cookie kept for compatibility)."""
     currency = currency.upper()
     if currency not in SUPPORTED_CURRENCIES:
         currency = 'USD'
+    set_setting('currency', currency)
     next_url = request.referrer or url_for('index')
     resp = redirect(next_url)
     resp.set_cookie('currency', currency, max_age=60 * 60 * 24 * 365)
     return resp
+
+
+@app.route('/set_theme/<theme>')
+def set_theme(theme):
+    """Persist the display theme choice in settings and return to the referring page."""
+    theme = (theme or '').lower()
+    if theme not in SUPPORTED_THEMES:
+        theme = DEFAULT_THEME
+    set_setting('theme', theme)
+    return redirect(request.referrer or url_for('index'))
+
+
+# Top-level destination for each route, used to highlight the sidebar/tab bar.
+NAV_ACTIVE_BY_ENDPOINT = {
+    'index': 'home',
+    'view_collection': 'collection',
+    'view_collection_group': 'collection',
+    'decks': 'decks',
+    'deck_view': 'decks',
+    'deck_edit': 'decks',
+    'deck_new': 'decks',
+    'view_sets': 'sets',
+    'view_cards_by_set': 'sets',
+    'search_cards': 'search',
+    'view_settings': 'settings',
+}
+
+
+def get_sidebar_context():
+    """Navigation data for the shell: custom groups (binders) with counts, the
+    default group, and collection/deck totals for sidebar badges.
+
+    Returns a dict consumed by _sidebar.html / _tabbar.html.
+    """
+    conn = sqlite3.connect(DATABASE)
+    conn.row_factory = sqlite3.Row
+    cursor = conn.cursor()
+    cursor.execute('''
+        SELECT g.id, g.name, g.image_url,
+               COALESCE(SUM(uc.quantity), 0) AS card_count,
+               COUNT(DISTINCT uc.card_id) AS unique_count
+        FROM collection_groups g
+        LEFT JOIN user_collection uc ON uc.group_id = g.id
+        WHERE g.set_code IS NULL
+        GROUP BY g.id
+        ORDER BY g.name COLLATE NOCASE
+    ''')
+    rows = cursor.fetchall()
+
+    cursor.execute('SELECT COALESCE(SUM(quantity), 0) FROM user_collection')
+    total_cards = cursor.fetchone()[0]
+    cursor.execute('SELECT COUNT(DISTINCT card_id) FROM user_collection')
+    total_unique = cursor.fetchone()[0]
+    cursor.execute('SELECT COUNT(*) FROM decks')
+    deck_count = cursor.fetchone()[0]
+    conn.close()
+
+    binders = []
+    default_binder = None
+    for r in rows:
+        item = {
+            'id': r['id'],
+            'name': r['name'],
+            'image_url': r['image_url'],
+            'card_count': r['card_count'],
+            'unique_count': r['unique_count'],
+        }
+        if r['name'] == 'My Collection':
+            default_binder = item
+        else:
+            binders.append(item)
+
+    active_binder_id = None
+    if request.endpoint == 'view_collection_group':
+        active_binder_id = request.view_args.get('group_id')
+
+    return {
+        'sidebar_binders': binders,
+        'sidebar_default_binder': default_binder,
+        'sidebar_total_cards': total_cards,
+        'sidebar_total_unique': total_unique,
+        'sidebar_deck_count': deck_count,
+        'nav_active': NAV_ACTIVE_BY_ENDPOINT.get(request.endpoint, ''),
+        'active_binder_id': active_binder_id,
+    }
+
+
+@app.context_processor
+def inject_navigation():
+    return get_sidebar_context()
 
 # Tile images (collection groups and decks): pre-bundled choices live in
 # GALLERY_DIR (shared), user uploads are saved into their own per-entity folder.
@@ -181,6 +285,33 @@ def sort_collection(collection, sort_mode='collector_number'):
     return sorted(collection, key=sort_key)
 DATABASE = os.getenv('DATABASE', 'magic_collector.db')
 
+
+def get_setting(key, default=None):
+    """Read a value from the `settings` key/value table, or `default`."""
+    try:
+        conn = sqlite3.connect(DATABASE)
+        cursor = conn.cursor()
+        cursor.execute('SELECT value FROM settings WHERE key = ?', (key,))
+        row = cursor.fetchone()
+        conn.close()
+        return row[0] if row else default
+    except sqlite3.OperationalError:
+        # settings table not created yet (pre-migration database) — treat as unset.
+        return default
+
+
+def set_setting(key, value):
+    """Upsert a value in the `settings` key/value table."""
+    conn = sqlite3.connect(DATABASE)
+    cursor = conn.cursor()
+    cursor.execute(
+        'INSERT INTO settings (key, value) VALUES (?, ?) '
+        'ON CONFLICT(key) DO UPDATE SET value = excluded.value',
+        (key, None if value is None else str(value)),
+    )
+    conn.commit()
+    conn.close()
+
 # Scryfall requires a custom User-Agent and an explicit Accept header on every
 # request; it rejects the default python-requests User-Agent with a 400
 # (subcode "generic_user_agent"). See https://scryfall.com/docs/api.
@@ -215,6 +346,89 @@ def strftime_filter(timestamp, format_string='%Y-%m-%d %H:%M'):
         except (ValueError, AttributeError):
             return str(timestamp)
     return 'N/A'
+
+MANA_SYMBOL_RE = re.compile(r'\{([^{}]+)\}')
+
+
+@app.template_filter('mana_symbols')
+def mana_symbols_filter(mana_cost):
+    """Render '{W}{U}{2}' as Scryfall mana-symbol SVGs (hybrid '{W/U}' -> 'WU')."""
+    from markupsafe import Markup
+    if not mana_cost:
+        return Markup('')
+    parts = MANA_SYMBOL_RE.split(mana_cost)
+    out = []
+    for i, part in enumerate(parts):
+        if i % 2 == 0:
+            if part:
+                out.append(Markup.escape(part))
+        else:
+            sym = re.sub(r'[^0-9A-Za-z]', '', part)
+            url = f'https://svgs.scryfall.io/card-symbols/{sym}.svg'
+            alt_text = '{' + part + '}'
+            out.append(Markup(
+                f'<img src="{url}" alt="{alt_text}" class="mc-mana" loading="lazy" '
+                f'width="20" height="20">'
+            ))
+    return Markup('').join(out) if out else Markup('')
+
+
+def parse_optional(json_str):
+    """Parse a JSON column into a Python object, or None."""
+    if not json_str:
+        return None
+    try:
+        return json.loads(json_str)
+    except (json.JSONDecodeError, TypeError):
+        return None
+
+
+def card_dict_from_row(row, qty_regular=0, qty_foil=0, currency='USD'):
+    """Turn a cards-table tuple (c.*) into a dict for the collection views,
+    with resolved images, faces and prices for both finishes."""
+    image_uris = parse_optional(row[37])
+    card_faces = parse_optional(row[38])
+    price = price_from_json(row[34], False, currency)
+    price_foil = price_from_json(row[34], True, currency)
+    line_regular = (price * qty_regular) if price else 0
+    line_foil = (price_foil * qty_foil) if price_foil else 0
+    return {
+        'id': row[0], 'name': row[1], 'mana_cost': row[2], 'cmc': row[3],
+        'type_line': row[4], 'oracle_text': row[5], 'power': row[6], 'toughness': row[7],
+        'colors': row[8], 'color_identity': row[9], 'legalities': row[10],
+        'set_code': row[21], 'set_name': row[22], 'collector_number': row[23],
+        'rarity': row[24], 'artist': row[25],
+        'image_uris': image_uris, 'card_faces': card_faces,
+        'qty_regular': qty_regular, 'qty_foil': qty_foil,
+        'price': price, 'price_foil': price_foil,
+        'line_total': line_regular + line_foil,
+    }
+
+
+def _collector_key(card):
+    """Sort key by collector number (numeric when possible, then raw string)."""
+    num = card['collector_number'] or ''
+    m = re.match(r'(\d+)', num)
+    return (int(m.group(1)) if m else 0, num)
+
+
+def sort_binder_cards(cards, mode):
+    """Sort card dicts by collector_number (default), color, rarity, or price."""
+    if mode == 'price':
+        return sorted(cards, key=lambda c: (c['line_total'] or 0), reverse=True)
+    if mode == 'color':
+        def color_key(c):
+            colors = parse_optional(c['colors']) or []
+            base = _collector_key(c)
+            if len(colors) == 1:
+                return (0, COLOR_SYMBOLS.get(colors[0], 99), base)
+            if len(colors) > 1:
+                return (1, 0, base)
+            return (2, 0, base)
+        return sorted(cards, key=color_key)
+    if mode == 'rarity':
+        return sorted(cards, key=lambda c: (RARITY_ORDER.get(c['rarity'], 9), _collector_key(c)))
+    return sorted(cards, key=_collector_key)
 
 def init_db():
     """Initialize the database with required tables"""
@@ -370,6 +584,13 @@ def init_db():
         # Column already exists, ignore
         pass
 
+    # Add image_card_id column to decks if it doesn't exist (cover art pinning)
+    try:
+        cursor.execute('ALTER TABLE decks ADD COLUMN image_card_id TEXT')
+    except sqlite3.OperationalError:
+        # Column already exists, ignore
+        pass
+
     # Collection groups: every user_collection row belongs to exactly one group.
     # A group is either pinned to a set (set_code non-null, unique) or custom (set_code null).
     cursor.execute('''
@@ -419,6 +640,14 @@ def init_db():
         )
         cursor.execute('DROP TABLE user_collection')
         cursor.execute('ALTER TABLE user_collection_new RENAME TO user_collection')
+
+    # Key/value app settings (display currency, theme, default group, sync state).
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS settings (
+            key TEXT PRIMARY KEY,
+            value TEXT
+        )
+    ''')
 
     # Indexes for hot lookup paths (cards by name, deck_cards by deck, etc.)
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_cards_name ON cards (name)')
@@ -673,23 +902,28 @@ def update_collection_quantity(card_id, quantity, is_foil=False, group_id=None):
     conn.close()
     return quantity
 
-def get_card_price(card_data, is_foil=False, currency='USD'):
-    """Extract the appropriate price from card data based on foil status and currency (USD/EUR)"""
-    if not card_data or not card_data[34]:  # prices field is at index 34
+def price_from_json(prices_json, is_foil=False, currency='USD'):
+    """Extract the appropriate price from a prices JSON blob (foil/non-foil, USD/EUR)."""
+    if not prices_json:
         return None
-
     currency_key = 'eur' if currency == 'EUR' else 'usd'
     try:
-        prices = json.loads(card_data[34])
+        prices = json.loads(prices_json)
         if is_foil:
             # For foil cards, try the foil price first, then fall back to non-foil
             price = prices.get(f'{currency_key}_foil') or prices.get(currency_key)
         else:
             price = prices.get(currency_key)
-
         return float(price) if price else None
     except (json.JSONDecodeError, ValueError, TypeError):
         return None
+
+
+def get_card_price(card_data, is_foil=False, currency='USD'):
+    """Extract the appropriate price from card data based on foil status and currency (USD/EUR)"""
+    if not card_data or not card_data[34]:  # prices field is at index 34
+        return None
+    return price_from_json(card_data[34], is_foil, currency)
 
 def store_cards(cards_data, set_code):
     """Store cards data in the database"""
@@ -795,52 +1029,139 @@ def favicon():
 
 @app.route('/')
 def index():
-    """Main page with sets overview"""
+    """Home overview: collection stats, binders, recent additions and recent sets."""
+    currency = get_currency()
     conn = sqlite3.connect(DATABASE)
     cursor = conn.cursor()
-    cursor.execute('SELECT * FROM sets ORDER BY released_at DESC')
-    sets = cursor.fetchall()
-    
-    # Get total cards count
-    cursor.execute('SELECT COUNT(*) FROM cards')
-    total_cards = cursor.fetchone()[0]
-    
-    # Get cards in collection count
-    cursor.execute('SELECT COUNT(*) FROM user_collection')
-    cards_in_collection = cursor.fetchone()[0]
-    
-    conn.close()
-    
-    return render_template('index.html', sets=sets, total_cards=total_cards, cards_in_collection=cards_in_collection)
+    try:
+        cursor.execute('SELECT COALESCE(SUM(quantity), 0) FROM user_collection')
+        total_cards = cursor.fetchone()[0]
+        cursor.execute('SELECT COUNT(DISTINCT card_id) FROM user_collection')
+        total_unique = cursor.fetchone()[0]
+        cursor.execute('SELECT COUNT(*) FROM decks')
+        deck_count = cursor.fetchone()[0]
+        cursor.execute('SELECT COUNT(*) FROM cards')
+        db_cards = cursor.fetchone()[0]
+
+        # Collection value across every binder and both finishes.
+        total_value = 0.0
+        cursor.execute('''
+            SELECT c.prices, uc.is_foil, SUM(uc.quantity)
+            FROM user_collection uc JOIN cards c ON c.id = uc.card_id
+            GROUP BY uc.card_id, uc.is_foil
+        ''')
+        for prices, is_foil, qty in cursor.fetchall():
+            price = price_from_json(prices, bool(is_foil), currency)
+            if price:
+                total_value += price * qty
+
+        # Most recent additions (keeps the visual commit order stable).
+        cursor.execute('''
+            SELECT c.*, uc.updated_at FROM user_collection uc
+            JOIN cards c ON c.id = uc.card_id
+            ORDER BY uc.updated_at DESC, uc.id DESC
+            LIMIT 8
+        ''')
+        recent_rows = cursor.fetchall()
+        recent_cards = [card_dict_from_row(r, 0, 0, currency) for r in recent_rows]
+
+        cursor.execute('''
+            SELECT s.code, s.name, s.released_at, s.icon_svg_uri,
+                   (SELECT COUNT(*) FROM cards c WHERE c.set_code = s.code) AS synced_count
+            FROM sets s
+            ORDER BY s.released_at DESC, s.name
+            LIMIT 6
+        ''')
+        recent_sets = [{
+            'code': code, 'name': name, 'released_at': released_at,
+            'icon_svg_uri': icon_svg_uri, 'synced_count': synced_count,
+        } for code, name, released_at, icon_svg_uri, synced_count in cursor.fetchall()]
+    finally:
+        conn.close()
+
+    return render_template('index.html', total_cards=total_cards,
+                           total_unique=total_unique, deck_count=deck_count,
+                           db_cards=db_cards, total_value=total_value,
+                           recent_cards=recent_cards, recent_sets=recent_sets)
 
 @app.route('/sets')
 def view_sets():
-    """View all sets"""
+    """View all sets with owned/synced stats."""
     conn = sqlite3.connect(DATABASE)
     cursor = conn.cursor()
     cursor.execute('SELECT * FROM sets ORDER BY released_at DESC')
-    sets = cursor.fetchall()
+    raw_sets = cursor.fetchall()
+
+    cursor.execute('''
+        SELECT c.set_code, COUNT(DISTINCT c.id) AS owned_unique,
+               COALESCE(SUM(uc.quantity), 0) AS owned_qty
+        FROM user_collection uc JOIN cards c ON c.id = uc.card_id
+        GROUP BY c.set_code
+    ''')
+    owned_map = {code: (unique, qty) for code, unique, qty in cursor.fetchall()}
+    cursor.execute('SELECT set_code, COUNT(*) FROM cards GROUP BY set_code')
+    synced_map = dict(cursor.fetchall())
+    types = sorted({s[3] for s in raw_sets if s[3]})
     conn.close()
-    
-    return render_template('sets.html', sets=sets)
+
+    sets = []
+    for s in raw_sets:
+        owned_unique, owned_qty = owned_map.get(s[1], (0, 0))
+        sets.append({
+            'id': s[0], 'code': s[1], 'name': s[2], 'set_type': s[3],
+            'released_at': s[4], 'card_count': s[8], 'icon_svg_uri': s[14],
+            'foil_only': s[10], 'digital': s[9],
+            'owned_unique': owned_unique, 'owned_qty': owned_qty,
+            'synced': synced_map.get(s[1], 0),
+        })
+    return render_template('sets.html', sets=sets, set_types=types)
 
 @app.route('/cards/<set_code>')
 def view_cards_by_set(set_code):
-    """View cards for a specific set"""
+    """View cards for a specific set, with per-card ownership and sorting."""
     conn = sqlite3.connect(DATABASE)
     cursor = conn.cursor()
-    
-    # Get set info
     cursor.execute('SELECT * FROM sets WHERE code = ?', (set_code,))
-    set_info = cursor.fetchone()
-    
-    # Get cards for this set - sort by collector number as number
-    cursor.execute('SELECT * FROM cards WHERE set_code = ? ORDER BY CAST(collector_number AS INTEGER)', (set_code,))
-    cards = cursor.fetchall()
-    
+    s = cursor.fetchone()
+    if not s:
+        conn.close()
+        return redirect(url_for('view_sets'))
+    currency = get_currency()
+
+    cursor.execute('''
+        SELECT c.*,
+               COALESCE(SUM(CASE WHEN uc.is_foil = 0 THEN uc.quantity ELSE 0 END), 0) AS qty_regular,
+               COALESCE(SUM(CASE WHEN uc.is_foil = 1 THEN uc.quantity ELSE 0 END), 0) AS qty_foil
+        FROM cards c
+        LEFT JOIN user_collection uc ON uc.card_id = c.id
+        WHERE c.set_code = ?
+        GROUP BY c.id
+    ''', (set_code,))
+    cards = [card_dict_from_row(row, row[40], row[41], currency) for row in cursor.fetchall()]
     conn.close()
-    
-    return render_template('cards.html', set_info=set_info, cards=cards)
+
+    sort_mode = request.args.get('sort', 'collector')
+    if sort_mode not in ('collector', 'name', 'price'):
+        sort_mode = 'collector'
+    if sort_mode == 'name':
+        cards.sort(key=lambda c: c['name'].lower())
+    elif sort_mode == 'price':
+        cards.sort(key=lambda c: c['price'] or 0, reverse=True)
+    else:
+        cards.sort(key=_collector_key)
+
+    total_owned = sum(c['qty_regular'] + c['qty_foil'] for c in cards)
+    if request.args.get('owned'):
+        cards = [c for c in cards if c['qty_regular'] + c['qty_foil'] > 0]
+
+    set_info = {
+        'code': s[1], 'name': s[2], 'set_type': s[3], 'released_at': s[4],
+        'card_count': s[8], 'icon_svg_uri': s[14], 'digital': s[9],
+        'foil_only': s[10], 'nonfoil_only': s[11], 'printed_size': s[16],
+    }
+    total_owned = sum(c['qty_regular'] + c['qty_foil'] for c in cards)
+    return render_template('cards.html', set_info=set_info, cards=cards,
+                           total_owned=total_owned, sort_mode=sort_mode)
 
 @app.route('/card/<card_id>')
 def view_card_detail(card_id):
@@ -864,7 +1185,116 @@ def view_card_detail(card_id):
         non_foil_qty, foil_qty = get_collection_totals(card_id)
     else:
         non_foil_qty, foil_qty = 0, 0
-    
+
+    currency = get_currency()
+
+    # Per-group ownership for this exact printing (both finishes per group).
+    groups_owned = []
+    if card:
+        cursor.execute('''
+            SELECT g.id, g.name, uc.is_foil, uc.quantity
+            FROM user_collection uc JOIN collection_groups g ON g.id = uc.group_id
+            WHERE uc.card_id = ?
+            ORDER BY g.name COLLATE NOCASE
+        ''', (card_id,))
+        grouped = {}
+        for g_id, g_name, is_foil, qty in cursor.fetchall():
+            entry = grouped.setdefault(g_id, {'group_id': g_id, 'group_name': g_name, 'regular': 0, 'foil': 0})
+            if is_foil:
+                entry['foil'] = qty
+            else:
+                entry['regular'] = qty
+        groups_owned = list(grouped.values())
+
+    # All binder groups (custom groups + the default group) for the "Add to" select.
+    cursor.execute('''
+        SELECT g.id, g.name FROM collection_groups g
+        WHERE g.set_code IS NULL
+        ORDER BY (g.name = 'My Collection') DESC, g.name COLLATE NOCASE
+    ''')
+    add_groups = [{'id': g_id, 'name': g_name} for g_id, g_name in cursor.fetchall()]
+
+    # Decks that use this card name (any printing), with main/side totals.
+    decks_used = []
+    if card:
+        card_name = card[1]
+        cursor.execute('''
+            SELECT d.id, d.name, dc.is_sideboard, COALESCE(SUM(dc.quantity), 0)
+            FROM deck_cards dc JOIN decks d ON d.id = dc.deck_id
+            WHERE dc.card_name = ?
+            GROUP BY d.id, dc.is_sideboard
+        ''', (card_name,))
+        deck_totals = {}
+        for d_id, d_name, is_sideboard, qty in cursor.fetchall():
+            entry = deck_totals.setdefault(d_id, {'id': d_id, 'name': d_name, 'main': 0, 'side': 0})
+            if is_sideboard:
+                entry['side'] = qty
+            else:
+                entry['main'] = qty
+        # Copies owned by this name across the whole collection (any printing, both finishes).
+        cursor.execute('''
+            SELECT COALESCE(SUM(uc.quantity), 0)
+            FROM user_collection uc JOIN cards c ON c.id = uc.card_id
+            WHERE c.name = ?
+        ''', (card_name,))
+        owned_by_name = cursor.fetchone()[0]
+        total_required = sum(d['main'] + d['side'] for d in deck_totals.values())
+        decks_used = []
+        for d in deck_totals.values():
+            required = d['main'] + d['side']
+            d['owned'] = min(required, owned_by_name)
+            d['owned_total'] = owned_by_name
+            d['shares'] = total_required > owned_by_name
+            decks_used.append(d)
+
+    # Other printings of the same card (same name, different sets) with owned state + price.
+    other_printings = []
+    if card:
+        card_name = card[1]
+        cursor.execute('''
+            SELECT c.id, c.name, c.set_code, c.collector_number, c.image_uris, c.rarity,
+                   c.prices, s.name as set_name, s.released_at
+            FROM cards c
+            JOIN sets s ON c.set_code = s.code
+            WHERE c.name = ? AND c.id != ?
+            ORDER BY s.released_at DESC
+        ''', (card_name, card_id))
+        for row in cursor.fetchall():
+            nf, f = get_collection_totals(row[0])
+            previous_price = price_from_json(row[6], False, currency)
+            other_printings.append({
+                'id': row[0], 'name': row[1], 'set_code': row[2],
+                'collector_number': row[3], 'image_uris': parse_optional(row[4]),
+                'rarity': row[5], 'set_name': row[7], 'released_at': row[8],
+                'owned_total': nf + f, 'non_foil_qty': nf, 'foil_qty': f,
+                'price': previous_price,
+            })
+
+    # Legal formats (chips) + the count of non-legal formats.
+    legal_formats = []
+    non_legal_formats = []
+    if card:
+        legalities = parse_optional(card[10]) or {}
+        format_order = ['standard', 'pioneer', 'modern', 'legacy', 'vintage', 'commander',
+                        'pauper', 'penny', 'brawl', 'future', 'historic', 'gladiator',
+                        'premodern', 'predh', 'alchemy', 'explorer', 'duel', 'oldschool']
+        for fmt in format_order:
+            status = legalities.get(fmt)
+            if not status:
+                continue
+            if status == 'legal':
+                legal_formats.append(fmt)
+            else:
+                non_legal_formats.append((fmt, status))
+
+    # Prices for the three-cell price strip (both currencies).
+    prices_blob = card[34] if card else None
+    prices_strip = {
+        'eur': price_from_json(prices_blob, False, 'EUR'),
+        'eur_foil': price_from_json(prices_blob, True, 'EUR'),
+        'usd': price_from_json(prices_blob, False, 'USD'),
+    }
+
     # Check if this is a double-sided card and get card_faces data
     card_faces_data = None
     if card and card[38]:  # card_faces field is at index 38
@@ -906,20 +1336,6 @@ def view_card_detail(card_id):
                         'image_uris': image_uris
                     })
     
-    # Get other printings of the same card (same name, different sets)
-    other_printings = []
-    if card:
-        card_name = card[1]  # name is at index 1
-        cursor.execute('''
-            SELECT c.id, c.name, c.set_code, c.collector_number, c.image_uris, c.rarity,
-                   s.name as set_name, s.released_at
-            FROM cards c
-            JOIN sets s ON c.set_code = s.code
-            WHERE c.name = ? AND c.id != ?
-            ORDER BY s.released_at DESC
-        ''', (card_name, card_id))
-        other_printings = cursor.fetchall()
-    
     conn.close()
 
     # Determine the "back" target based on where the card was opened from.
@@ -942,7 +1358,25 @@ def view_card_detail(card_id):
         back_url = url_for('view_cards_by_set', set_code=set_info[1])
         back_label = 'Back to Set'
 
-    return render_template('card_detail.html', card=card, set_info=set_info, non_foil_qty=non_foil_qty, foil_qty=foil_qty, card_faces_data=card_faces_data, other_printings=other_printings, back_url=back_url, back_label=back_label)
+    scryfall_uri = None
+    if card:
+        try:
+            scryfall_uri = (parse_optional(card[35]) or {}).get('scryfall')
+        except Exception:
+            scryfall_uri = None
+        if not scryfall_uri:
+            scryfall_uri = f'https://scryfall.com/cards/{card[21]}/{card[23]}'
+
+    return render_template('card_detail.html',
+                           card=card, set_info=set_info,
+                           non_foil_qty=non_foil_qty, foil_qty=foil_qty,
+                           card_faces_data=card_faces_data,
+                           other_printings=other_printings,
+                           groups_owned=groups_owned, add_groups=add_groups,
+                           decks_used=decks_used,
+                           legal_formats=legal_formats, non_legal_formats=non_legal_formats,
+                           prices_strip=prices_strip, scryfall_uri=scryfall_uri,
+                           back_url=back_url, back_label=back_label)
 
 @app.route('/add_to_collection', methods=['POST'])
 def add_to_collection_route():
@@ -982,12 +1416,16 @@ def update_collection_quantity_route():
     try:
         new_quantity = update_collection_quantity(card_id, quantity, is_foil, group_id=group_id)
         non_foil_qty, foil_qty = get_collection_totals(card_id)
+        group_nf = get_collection_quantity(card_id, False, group_id)
+        group_foil = get_collection_quantity(card_id, True, group_id)
         return jsonify({
             'success': True, 
             'message': f'Updated {"foil" if is_foil else "non-foil"} quantity to {new_quantity}',
             'new_quantity': new_quantity,
             'non_foil_qty': non_foil_qty,
-            'foil_qty': foil_qty
+            'foil_qty': foil_qty,
+            'group_non_foil_qty': group_nf,
+            'group_foil_qty': group_foil,
         })
     except Exception as e:
         return jsonify({'success': False, 'message': f'Error updating collection: {str(e)}'})
@@ -1102,62 +1540,111 @@ def update_collection_prices():
 
 @app.route('/collection')
 def view_collection():
-    """List all collection groups with aggregate stats and the global total value."""
+    """Collection overview: binders (custom groups), the By-set table, and an
+    'All cards' flat grid (toggle via ?view=cards)."""
     conn = sqlite3.connect(DATABASE)
     cursor = conn.cursor()
-
-    cursor.execute('''
-        SELECT g.id, g.name, g.image_url, g.set_code, g.updated_at,
-               s.icon_svg_uri,
-               COUNT(uc.id) AS rows_in_group,
-               COALESCE(SUM(uc.quantity), 0) AS total_qty
-        FROM collection_groups g
-        LEFT JOIN sets s ON s.code = g.set_code
-        LEFT JOIN user_collection uc ON uc.group_id = g.id
-        GROUP BY g.id
-        ORDER BY (g.set_code IS NULL) DESC, g.updated_at DESC
-    ''')
-    raw_groups = cursor.fetchall()
     currency = get_currency()
+    view_mode = request.args.get('view', 'groups')
+    if view_mode not in ('groups', 'cards'):
+        view_mode = 'groups'
 
-    # Per-group value: sum each row's price * quantity.
-    groups = []
-    total_collection_value = 0
-    for g_id, name, image_url, set_code, updated_at, set_icon, row_count, total_qty in raw_groups:
+    # Header stats across the whole collection.
+    cursor.execute('SELECT COALESCE(SUM(quantity), 0) FROM user_collection')
+    total_cards = cursor.fetchone()[0]
+    cursor.execute('SELECT COUNT(DISTINCT c.name) FROM user_collection uc JOIN cards c ON c.id = uc.card_id')
+    total_unique = cursor.fetchone()[0]
+
+    def group_value(group_id):
         cursor.execute('''
             SELECT c.prices, uc.quantity, uc.is_foil
             FROM user_collection uc JOIN cards c ON c.id = uc.card_id
             WHERE uc.group_id = ?
-        ''', (g_id,))
-        group_value = 0.0
+        ''', (group_id,))
+        value = 0.0
         for prices_json, qty, is_foil in cursor.fetchall():
-            # Reuse get_card_price by faking a card_data tuple with prices at index 34.
-            fake = [None] * 35
-            fake[34] = prices_json
-            price = get_card_price(fake, bool(is_foil), currency)
+            price = price_from_json(prices_json, bool(is_foil), currency)
             if price and qty:
-                group_value += price * qty
-        total_collection_value += group_value
-        groups.append({
-            'id': g_id,
-            'name': name,
-            'image_url': image_url or set_icon,
-            'set_code': set_code,
-            'updated_at': updated_at,
-            'row_count': row_count,
-            'total_qty': total_qty,
-            'value': group_value,
-        })
+                value += price * qty
+        return value
+
+    binders = []
+    set_rows = []
+    all_cards = []
+    total_collection_value = 0
+
+    if view_mode == 'groups':
+        cursor.execute('''
+            SELECT g.id, g.name, g.image_url,
+                   COALESCE(SUM(uc.quantity), 0) AS total_qty,
+                   COUNT(DISTINCT uc.card_id) AS unique_count
+            FROM collection_groups g
+            LEFT JOIN user_collection uc ON uc.group_id = g.id
+            WHERE g.set_code IS NULL
+            GROUP BY g.id
+            ORDER BY g.updated_at DESC
+        ''')
+        for g_id, name, image_url, total_qty, unique_count in cursor.fetchall():
+            value = group_value(g_id) if total_qty else 0
+            total_collection_value += value
+            binders.append({
+                'id': g_id, 'name': name, 'image_url': image_url,
+                'unique_count': unique_count, 'total_qty': total_qty, 'value': value,
+            })
+
+        # By-set table: cards owned from each set across all groups.
+        cursor.execute('''
+            SELECT c.set_code, s.name, s.icon_svg_uri, s.released_at, s.card_count,
+                   COUNT(DISTINCT c.id) AS owned_unique,
+                   COALESCE(SUM(uc.quantity), 0) AS owned_qty
+            FROM user_collection uc
+            JOIN cards c ON c.id = uc.card_id
+            JOIN sets s ON s.code = c.set_code
+            GROUP BY c.set_code
+            ORDER BY owned_qty DESC
+        ''')
+        for code, name, icon, released, card_count, owned_unique, owned_qty in cursor.fetchall():
+            cursor.execute('''
+                SELECT c.prices, uc.quantity, uc.is_foil
+                FROM user_collection uc JOIN cards c ON c.id = uc.card_id
+                WHERE c.set_code = ?
+            ''', (code,))
+            value = 0.0
+            for prices_json, qty, is_foil in cursor.fetchall():
+                price = price_from_json(prices_json, bool(is_foil), currency)
+                if price and qty:
+                    value += price * qty
+            total_collection_value += value
+            set_rows.append({
+                'code': code, 'name': name, 'icon_svg_uri': icon,
+                'released_at': released, 'card_count': card_count,
+                'owned_unique': owned_unique, 'owned_qty': owned_qty, 'value': value,
+            })
+    else:
+        cursor.execute('''
+            SELECT c.*,
+                   COALESCE(SUM(CASE WHEN uc.is_foil = 0 THEN uc.quantity ELSE 0 END), 0) AS qty_regular,
+                   COALESCE(SUM(CASE WHEN uc.is_foil = 1 THEN uc.quantity ELSE 0 END), 0) AS qty_foil
+            FROM user_collection uc JOIN cards c ON c.id = uc.card_id
+            GROUP BY c.id
+            ORDER BY c.name, c.collector_number
+        ''')
+        for row in cursor.fetchall():
+            all_cards.append(card_dict_from_row(row, row[40], row[41], currency))
+        total_collection_value = sum(c['line_total'] for c in all_cards)
 
     conn.close()
     default_group_id = get_default_group_id()
-    return render_template('collection.html', groups=groups,
+    return render_template('collection.html',
+                           groups=binders, set_rows=set_rows, all_cards=all_cards,
+                           view_mode=view_mode,
+                           total_cards=total_cards, total_unique=total_unique,
                            total_collection_value=total_collection_value,
                            default_group_id=default_group_id)
 
 @app.route('/collection/<int:group_id>')
 def view_collection_group(group_id):
-    """Show all cards in a single collection group."""
+    """Show all cards in a single collection group (binder)."""
     conn = sqlite3.connect(DATABASE)
     cursor = conn.cursor()
     cursor.execute('''
@@ -1171,31 +1658,30 @@ def view_collection_group(group_id):
         conn.close()
         return redirect(url_for('view_collection'))
 
+    currency = get_currency()
     cursor.execute('''
-        SELECT c.*, uc.quantity, uc.is_foil, uc.added_at, uc.updated_at
+        SELECT c.*,
+               COALESCE(SUM(CASE WHEN uc.is_foil = 0 THEN uc.quantity ELSE 0 END), 0) AS qty_regular,
+               COALESCE(SUM(CASE WHEN uc.is_foil = 1 THEN uc.quantity ELSE 0 END), 0) AS qty_foil
         FROM user_collection uc JOIN cards c ON uc.card_id = c.id
         WHERE uc.group_id = ?
-        ORDER BY uc.updated_at DESC
+        GROUP BY c.id
     ''', (group_id,))
-    collection = cursor.fetchall()
+    cards = [card_dict_from_row(row, row[40], row[41], currency) for row in cursor.fetchall()]
     conn.close()
 
-    collection_with_prices = []
-    total_value = 0
-    currency = get_currency()
-    for card_data in collection:
-        price = get_card_price(card_data, card_data[41], currency)
-        quantity = card_data[40]
-        line_total = price * quantity if price and quantity else None
-        collection_with_prices.append((*card_data, price, line_total))
-        if line_total:
-            total_value += line_total
+    total_unique = len(cards)
+    total_qty = sum(c['qty_regular'] + c['qty_foil'] for c in cards)
+    total_value = sum(c['line_total'] for c in cards)
 
-    # Apply sorting based on query parameter
     sort_mode = request.args.get('sort', 'collector_number')
-    if sort_mode not in ('color', 'rarity', 'collector_number'):
+    if sort_mode not in ('collector_number', 'color', 'rarity', 'price'):
         sort_mode = 'collector_number'
-    collection_sorted = sort_collection(collection_with_prices, sort_mode)
+    cards = sort_binder_cards(cards, sort_mode)
+
+    view_style = request.args.get('view', 'grid')
+    if view_style not in ('grid', 'list'):
+        view_style = 'grid'
 
     group = {
         'id': g_row[0],
@@ -1206,60 +1692,291 @@ def view_collection_group(group_id):
     }
     return render_template('group_detail.html',
                             group=group,
-                            collection=collection_sorted,
+                            cards=cards,
+                            total_unique=total_unique,
+                            total_qty=total_qty,
                             total_collection_value=total_value,
-                            sort_mode=sort_mode)
+                            sort_mode=sort_mode,
+                            view_style=view_style)
+
+@app.route('/collection/<int:group_id>/make_deck')
+def make_deck_from_group(group_id):
+    """Create a deck pre-filled with the binder's cards (by card name, quantities summed)."""
+    conn = sqlite3.connect(DATABASE)
+    cursor = conn.cursor()
+    cursor.execute('SELECT name FROM collection_groups WHERE id = ?', (group_id,))
+    g = cursor.fetchone()
+    if not g:
+        conn.close()
+        return redirect(url_for('view_collection'))
+    cursor.execute('''
+        SELECT c.name, SUM(uc.quantity) AS total, MAX(c.image_uris) AS image_uris
+        FROM user_collection uc JOIN cards c ON c.id = uc.card_id
+        WHERE uc.group_id = ?
+        GROUP BY c.name
+    ''', (group_id,))
+    rows = cursor.fetchall()
+    if not rows:
+        conn.close()
+        return redirect(url_for('view_collection_group', group_id=group_id))
+
+    image_url = None
+    for _, _, image_uris in rows:
+        parsed = parse_optional(image_uris)
+        if parsed and (parsed.get('normal') or parsed.get('large')):
+            image_url = parsed.get('normal') or parsed.get('large')
+            break
+
+    cursor.execute(
+        'INSERT INTO decks (name, description, format, image_url) VALUES (?, ?, ?, ?)',
+        (f"Deck: {g[0]}", f'Created from the "{g[0]}" binder.', None, image_url),
+    )
+    deck_id = cursor.lastrowid
+    cursor.executemany(
+        'INSERT INTO deck_cards (deck_id, card_name, quantity, is_sideboard) VALUES (?, ?, ?, ?)',
+        [(deck_id, name, qty, 0) for name, qty, _ in rows],
+    )
+    conn.commit()
+    conn.close()
+    return redirect(url_for('deck_view', deck_id=deck_id))
+
+_ES_STATE = {'client': None, 'index': None, 'checked': 0.0}
+
+def es_search_backend():
+    """Return (client, index) when Elasticsearch is reachable, else (None, None).
+
+    Availability is cached for 60 seconds so /search doesn't ping ES on every request;
+    a local Elasticsearch cluster is optional (see create_elk_index.py / load_bulk_cards_to_elk.py).
+    """
+    if time.time() - _ES_STATE['checked'] < 60:
+        return _ES_STATE['client'], _ES_STATE['index']
+    client = None
+    index = None
+    try:
+        import elasticsearch
+        host = os.getenv('ELASTICSEARCH_HOST', 'localhost')
+        port = int(os.getenv('ELASTICSEARCH_PORT', 9200))
+        index = os.getenv('ELASTICSEARCH_INDEX', 'mtg_cards')
+        user = os.getenv('ELASTICSEARCH_USER')
+        password = os.getenv('ELASTICSEARCH_PASSWORD')
+        use_ssl = os.getenv('ELASTICSEARCH_USE_SSL', 'false').lower() == 'true'
+        verify_certs = os.getenv('ELASTICSEARCH_VERIFY_CERTS', 'true').lower() == 'true'
+        protocol = 'https' if use_ssl else 'http'
+        cfg = {'hosts': [f'{protocol}://{host}:{port}'], 'request_timeout': 3,
+               'max_retries': 1, 'retry_on_timeout': False}
+        if user and password:
+            cfg['basic_auth'] = (user, password)
+        if use_ssl and not verify_certs:
+            cfg['verify_certs'] = False
+            cfg['ssl_show_warn'] = False
+        candidate = elasticsearch.Elasticsearch(**cfg)
+        if candidate.ping():
+            client = candidate
+        else:
+            index = None
+    except Exception as exc:
+        print(f'[search] Elasticsearch unavailable: {exc}')
+        index = None
+    _ES_STATE['client'] = client
+    _ES_STATE['index'] = index if client else None
+    _ES_STATE['checked'] = time.time()
+    return _ES_STATE['client'], _ES_STATE['index']
+
 
 @app.route('/search')
 def search_cards():
-    """Search cards page"""
+    """Advanced search: free text + filters, powered by Elasticsearch when it is
+    reachable and by SQLite otherwise. The `owned` filter forces SQLite because it
+    only applies to cards already in the local collection."""
     query = request.args.get('q', '').strip()
-    page = request.args.get('page', 1, type=int)
-    per_page = 20
-    
+    set_code = (request.args.get('set') or '').strip().upper()
+    rarity = (request.args.get('rarity') or '').strip().lower()
+    cmc_raw = (request.args.get('cmc') or '').strip()
+    price_min_raw = (request.args.get('price_min') or '').strip()
+    price_max_raw = (request.args.get('price_max') or '').strip()
+    owned = request.args.get('owned') == '1'
+    raw_colors = request.args.getlist('colors')
+    if not raw_colors and request.args.get('colors'):
+        raw_colors = request.args['colors'].replace(',', ' ').split()
+    colors = [c.upper() for c in raw_colors if c.upper() in 'WUBRG']
+    page = max(1, request.args.get('page', 1, type=int))
+    per_page = 60
+
+    try:
+        cmc = float(cmc_raw) if cmc_raw else None
+    except ValueError:
+        cmc = None
+    try:
+        price_min = float(price_min_raw) if price_min_raw else None
+    except ValueError:
+        price_min = None
+    try:
+        price_max = float(price_max_raw) if price_max_raw else None
+    except ValueError:
+        price_max = None
+
+    currency = get_currency()
+    price_key = 'eur' if currency == 'EUR' else 'usd'
+    price_foil_key = f'{price_key}_foil'
+
+    # Keep filter state for pagination links.
+    def filters_qs(**overrides):
+        base = {'q': query, 'set': set_code, 'rarity': rarity,
+                'colors': ','.join(colors), 'cmc': cmc_raw,
+                'price_min': price_min_raw, 'price_max': price_max_raw,
+                'owned': '1' if owned else ''}
+        base.update({k: v for k, v in overrides.items() if v is not None})
+        return urlencode({k: v for k, v in base.items() if v not in (None, '')})
+
     results = []
     total_results = 0
-    total_pages = 0
-    
-    if query:
+    engine = 'SQLite'
+
+    use_es_client, es_index = es_search_backend()
+    if use_es_client and not owned:
+        try:
+            must = []
+            if query:
+                must.append({'multi_match': {'query': query, 'fields': ['name^3', 'type_line', 'oracle_text']}})
+            if set_code:
+                must.append({'term': {'set_code': set_code}})
+            if rarity:
+                must.append({'term': {'rarity': rarity}})
+            if cmc is not None:
+                must.append({'term': {'cmc': cmc}})
+            for color in colors:
+                must.append({'term': {'color_identity': color}})
+            if price_min is not None or price_max is not None:
+                rng = {}
+                if price_min is not None:
+                    rng['gte'] = price_min
+                if price_max is not None:
+                    rng['lte'] = price_max
+                must.append({'range': {f'prices.{price_key}': rng}})
+
+            body = {'query': {'bool': {'must': must}} if must else {'match_all': {}},
+                    'from': (page - 1) * per_page, 'size': per_page}
+            if not query:
+                body['sort'] = [{'name.keyword': {'order': 'asc'}}]
+
+            resp = use_es_client.search(index=es_index, body=body)
+            total_results = int(resp['hits']['total']['value'])
+            hits = resp['hits']['hits']
+
+            # Owned quantities for the returned ids, from SQLite.
+            ids = [h['_source'].get('id') for h in hits if h.get('_source', {}).get('id')]
+            qty_map = {}
+            if ids:
+                ph = ','.join('?' for _ in ids)
+                conn = sqlite3.connect(DATABASE)
+                cur = conn.cursor()
+                cur.execute(
+                    f'SELECT card_id, is_foil, SUM(quantity) FROM user_collection '
+                    f'WHERE card_id IN ({ph}) GROUP BY card_id, is_foil', ids)
+                for cid, is_foil, qty in cur.fetchall():
+                    key = (cid, is_foil)
+                    qty_map[key] = qty
+                conn.close()
+
+            for h in hits:
+                s = h['_source']
+                prices = s.get('prices') or {}
+                price = prices.get(price_key)
+                price_foil = prices.get(price_foil_key)
+                nf = qty_map.get((s.get('id'), 0), 0)
+                f = qty_map.get((s.get('id'), 1), 0)
+                es_img = s.get('image_uris') or {}
+                img_dict = es_img if any(es_img.get(k) for k in ('small', 'normal', 'large')) else None
+                results.append({
+                    'id': s.get('id'), 'name': s.get('name', ''),
+                    'mana_cost': s.get('mana_cost'), 'cmc': s.get('cmc'),
+                    'type_line': s.get('type_line', ''), 'oracle_text': s.get('oracle_text', ''),
+                    'power': s.get('power'), 'toughness': s.get('toughness'),
+                    'rarity': s.get('rarity'), 'collector_number': s.get('collector_number'),
+                    'set_code': s.get('set_code'), 'set_name': s.get('set_name'),
+                    'image_uris': img_dict,
+                    'card_faces': s.get('card_faces') or [],
+                    'qty_regular': nf, 'qty_foil': f,
+                    'price': price, 'price_foil': price_foil,
+                    'line_total': (price or 0) * nf + (price_foil or 0) * f,
+                })
+            engine = 'Elasticsearch'
+        except Exception as exc:
+            print(f'[search] ES query failed, falling back to SQLite: {exc}')
+            results = []
+
+    # SQLite fallback (also used when `owned` is set or ES is unavailable).
+    if use_es_client and engine == 'Elasticsearch':
+        pass
+    else:
         conn = sqlite3.connect(DATABASE)
         cursor = conn.cursor()
-        
-        # Search in card name, type_line, and oracle_text
-        search_term = f'%{query}%'
-        
-        # Get total count
-        cursor.execute('''
-            SELECT COUNT(*) FROM cards 
-            WHERE name LIKE ? OR type_line LIKE ? OR oracle_text LIKE ?
-        ''', (search_term, search_term, search_term))
+
+        conds = []
+        params = []
+        if query:
+            like = f'%{query}%'
+            conds.append('(c.name LIKE ? OR c.type_line LIKE ? OR c.oracle_text LIKE ?)')
+            params += [like, like, like]
+        if set_code:
+            conds.append('c.set_code = ?')
+            params.append(set_code)
+        if rarity:
+            conds.append('c.rarity = ?')
+            params.append(rarity)
+        if cmc is not None:
+            conds.append('c.cmc = ?')
+            params.append(cmc)
+        for color in colors:
+            conds.append("c.color_identity LIKE ?")
+            params.append(f'%"{color}"%')
+        if owned:
+            conds.append('EXISTS (SELECT 1 FROM user_collection x WHERE x.card_id = c.id)')
+        if price_min is not None:
+            conds.append(f"json_extract(c.prices, '$.{price_key}') >= ?")
+            params.append(price_min)
+        if price_max is not None:
+            conds.append(f"json_extract(c.prices, '$.{price_key}') <= ?")
+            params.append(price_max)
+
+        where = ('WHERE ' + ' AND '.join(conds)) if conds else ''
+        cursor.execute(f'SELECT COUNT(*) FROM cards c {where}', params)
         total_results = cursor.fetchone()[0]
-        
-        # Get paginated results
+
         offset = (page - 1) * per_page
-        cursor.execute('''
-            SELECT c.id, c.name, c.mana_cost, c.type_line, c.oracle_text, c.power, c.toughness,
-                   c.rarity, c.set_code, c.collector_number, c.image_uris, c.prices,
-                   s.name as set_name, s.released_at
+        cursor.execute(f'''
+            SELECT c.*,
+                   COALESCE(SUM(CASE WHEN uc.is_foil = 0 THEN uc.quantity END), 0) AS nf,
+                   COALESCE(SUM(CASE WHEN uc.is_foil = 1 THEN uc.quantity END), 0) AS f
             FROM cards c
-            LEFT JOIN sets s ON c.set_code = s.code
-            WHERE c.name LIKE ? OR c.type_line LIKE ? OR c.oracle_text LIKE ?
-            ORDER BY c.name, s.released_at DESC
+            LEFT JOIN user_collection uc ON uc.card_id = c.id
+            {where}
+            GROUP BY c.id
+            ORDER BY c.name COLLATE NOCASE
             LIMIT ? OFFSET ?
-        ''', (search_term, search_term, search_term, per_page, offset))
-        results = cursor.fetchall()
-        
-        total_pages = (total_results + per_page - 1) // per_page
-        
+        ''', params + [per_page, offset])
+        rows = cursor.fetchall()
         conn.close()
-    
-    return render_template('search.html', 
-                         query=query, 
-                         results=results, 
-                         total_results=total_results,
-                         page=page, 
-                         per_page=per_page,
-                         total_pages=total_pages)
+        results = [card_dict_from_row(row, row[40], row[41], currency) for row in rows]
+
+    total_pages = max(1, (total_results + per_page - 1) // per_page) if total_results else 1
+    page = min(page, total_pages)
+
+    conn = sqlite3.connect(DATABASE)
+    cursor = conn.cursor()
+    cursor.execute('SELECT DISTINCT code, name FROM sets WHERE code IS NOT NULL ORDER BY name')
+    all_sets = [{'code': code, 'name': name} for code, name in cursor.fetchall()]
+    conn.close()
+
+    return render_template('search.html',
+                           query=query, results=results, total_results=total_results,
+                           page=page, per_page=per_page, total_pages=total_pages,
+                           engine=engine, all_sets=all_sets,
+                           filters=filters_qs,
+                           selected_set=set_code, selected_rarity=rarity,
+                           selected_colors=colors, cmc=cmc_raw,
+                           price_min=price_min_raw, price_max=price_max_raw,
+                           owned=owned)
 
 @app.route('/fetch_sets', methods=['POST'])
 def fetch_sets():
@@ -1280,6 +1997,71 @@ def fetch_cards(set_code):
         return jsonify({'success': True, 'message': f'Fetched and stored {len(cards_data)} cards for set {set_code}'})
     else:
         return jsonify({'success': False, 'message': f'Failed to fetch cards for set {set_code}'})
+
+@app.route('/api/card_names')
+def api_card_names():
+    """Return up to 8 distinct card names starting with the query (for autocomplete)."""
+    q = (request.args.get('q') or '').strip()
+    if len(q) < 2:
+        return jsonify({'names': []})
+    conn = sqlite3.connect(DATABASE)
+    cursor = conn.cursor()
+    cursor.execute(
+        'SELECT DISTINCT name FROM cards WHERE name LIKE ? ORDER BY name LIMIT 8',
+        (f'{q}%',),
+    )
+    names = [r[0] for r in cursor.fetchall()]
+    conn.close()
+    return jsonify({'names': names})
+
+
+@app.route('/api/deck_add_search')
+def deck_add_search_api():
+    """Search cards for the deck-builder add panel.
+
+    Returns up to 15 matches with name, mana cost, type, price and owned
+    copies. scope is one of owned_first (default), owned_only or all.
+    """
+    q = (request.args.get('q') or '').strip()
+    scope = request.args.get('scope') or 'owned_first'
+    if len(q) < 2:
+        return jsonify({'results': []})
+
+    conn = sqlite3.connect(DATABASE)
+    cursor = conn.cursor()
+    like = f'%{q}%'
+    cursor.execute('''
+        SELECT c.name, c.mana_cost, c.prices, c.image_uris, c.type_line,
+               COALESCE(SUM(CASE WHEN uc.is_foil = 0 THEN uc.quantity END), 0) AS nf,
+               COALESCE(SUM(CASE WHEN uc.is_foil = 1 THEN uc.quantity END), 0) AS f
+        FROM cards c
+        LEFT JOIN user_collection uc ON uc.card_id = c.id
+        WHERE c.name LIKE ? OR c.type_line LIKE ?
+        GROUP BY c.id
+        ORDER BY c.name COLLATE NOCASE
+        LIMIT 60
+    ''', (like, like))
+    currency = get_currency()
+    results = []
+    for name, mana_cost, prices, image_uris, type_line, nf, f in cursor.fetchall():
+        own = (nf or 0) + (f or 0)
+        if scope == 'owned_only' and own == 0:
+            continue
+        img = parse_optional(image_uris) or {}
+        results.append({
+            'name': name,
+            'mana_cost': mana_cost or '',
+            'type_line': type_line or '',
+            'own': own,
+            'price': price_from_json(prices, False, currency),
+            'image': img.get('small') or img.get('normal'),
+        })
+    conn.close()
+
+    if scope == 'owned_first':
+        results.sort(key=lambda r: (r['own'] == 0, r['name'].lower()))
+    return jsonify({'results': results[:15]})
+
 
 @app.route('/api/card_by_name')
 def api_card_by_name():
@@ -1456,8 +2238,22 @@ def delete_collection_group(group_id):
 
 @app.route('/settings')
 def view_settings():
-    """Settings page"""
-    return render_template('settings.html')
+    """Settings page: appearance, currency and data management."""
+    conn = sqlite3.connect(DATABASE)
+    cursor = conn.cursor()
+    try:
+        stats = {
+            'total_cards': cursor.execute('SELECT COUNT(*) FROM cards').fetchone()[0],
+            'total_sets': cursor.execute('SELECT COUNT(*) FROM sets').fetchone()[0],
+            'collection_cards': cursor.execute(
+                'SELECT COALESCE(SUM(quantity), 0) FROM user_collection').fetchone()[0],
+            'total_decks': cursor.execute('SELECT COUNT(*) FROM decks').fetchone()[0],
+        }
+    finally:
+        conn.close()
+    return render_template('settings.html', stats=stats,
+                           current_theme=get_theme(),
+                           current_currency=get_currency())
 
 @app.route('/theme-demo')
 def view_theme_demo():
@@ -1559,7 +2355,7 @@ def get_best_prices_for_card_names(cursor, card_names, currency='USD'):
 
 @app.route('/decks')
 def decks():
-    """Display all decks"""
+    """Display all decks with ownership stats."""
     try:
         conn = sqlite3.connect(DATABASE)
         cursor = conn.cursor()
@@ -1589,6 +2385,23 @@ def decks():
         # Resolve every card's price once instead of once per deck per card
         prices_by_name = get_best_prices_for_card_names(cursor, all_card_names, get_currency())
 
+        # Copies owned per card name across the whole collection (any printing, both finishes)
+        cursor.execute('''
+            SELECT c.name, COALESCE(SUM(uc.quantity), 0)
+            FROM user_collection uc JOIN cards c ON c.id = uc.card_id
+            GROUP BY c.name
+        ''')
+        owned_by_name = dict(cursor.fetchall())
+
+        # Distinct colors per deck (for the color pips next to each deck name)
+        colors_by_deck = {}
+        for deck_id, ci in cursor.execute(
+                'SELECT dc.deck_id, c.color_identity FROM deck_cards dc '
+                'JOIN cards c ON c.name = dc.card_name').fetchall():
+            for letter in (parse_optional(ci) or []):
+                if letter in COLOR_ORDER:
+                    colors_by_deck.setdefault(deck_id, set()).add(letter)
+
         deck_data = []
         for deck in decks:
             deck_id, name, description, format_name, image_url, created_at, updated_at = deck
@@ -1605,6 +2418,15 @@ def decks():
                 if card_name in prices_by_name
             )
 
+            required = sum(totals.values())
+            owned_copies = sum(
+                min(owned_by_name.get(card_name, 0), quantity)
+                for card_name, quantity in totals.items()
+            )
+            main_total = sum(q for _, q in main_deck)
+            side_total = sum(q for _, q in sideboard)
+            missing = [n for n in totals if n not in owned_by_name]
+
             deck_data.append({
                 'id': deck_id,
                 'name': name,
@@ -1615,7 +2437,14 @@ def decks():
                 'updated_at': updated_at,
                 'main_deck': main_deck,
                 'sideboard': sideboard,
-                'value': value
+                'value': value,
+                'main_total': main_total,
+                'side_total': side_total,
+                'total_cards': required,
+                'owned_copies': owned_copies,
+                'missing': missing,
+                'pct': (owned_copies / required * 100) if required else 0,
+                'colors': ''.join(sorted(colors_by_deck.get(deck_id, ()), key=COLOR_ORDER.index)),
             })
 
         conn.close()
@@ -1701,6 +2530,24 @@ def delete_deck():
         
     except Exception as e:
         return jsonify({'success': False, 'message': f'Error deleting deck: {str(e)}'})
+
+@app.route('/deck/<int:deck_id>/clear', methods=['POST'])
+def clear_deck(deck_id):
+    """Remove every card from a deck without deleting the deck itself."""
+    try:
+        conn = sqlite3.connect(DATABASE)
+        cur = conn.cursor()
+        cur.execute('SELECT id FROM decks WHERE id = ?', (deck_id,))
+        if not cur.fetchone():
+            conn.close()
+            return jsonify({'success': False, 'message': 'Deck not found'}), 404
+        cur.execute('DELETE FROM deck_cards WHERE deck_id = ?', (deck_id,))
+        cur.execute('UPDATE decks SET updated_at = CURRENT_TIMESTAMP WHERE id = ?', (deck_id,))
+        conn.commit()
+        conn.close()
+        return jsonify({'success': True, 'message': 'Deck emptied'})
+    except Exception as e:
+        return jsonify({'success': False, 'message': f'Error emptying deck: {str(e)}'})
 
 @app.route('/delete_all_decks', methods=['POST'])
 def delete_all_decks():
@@ -1837,12 +2684,11 @@ def refresh_card(card_id):
 
 @app.route('/deck/<int:deck_id>')
 def deck_view(deck_id):
-    """View individual deck details"""
+    """Deck builder: deck header + inline main/sideboard card tables."""
     try:
         conn = sqlite3.connect(DATABASE)
         cursor = conn.cursor()
 
-        # Get deck info
         cursor.execute('''
             SELECT id, name, description, format, image_url, created_at, updated_at
             FROM decks
@@ -1851,62 +2697,36 @@ def deck_view(deck_id):
         deck = cursor.fetchone()
 
         if not deck:
+            conn.close()
             return "Deck not found", 404
 
         deck_id, name, description, format_name, image_url, created_at, updated_at = deck
-        missing_cards = [c for c in request.args.get('missing', '').split('|') if c]
-        deck_value = get_deck_value(cursor, deck_id, get_currency())
+        currency = get_currency()
+        deck_value = get_deck_value(cursor, deck_id, currency)
+        rows = get_deck_card_rows(cursor, deck_id, currency)
 
-        # Get main deck cards
-        cursor.execute('''
-            SELECT card_name, quantity
-            FROM deck_cards
-            WHERE deck_id = ? AND is_sideboard = FALSE
-            ORDER BY card_name
-        ''', (deck_id,))
-        main_deck = cursor.fetchall()
-        
-        # Get sideboard cards
-        cursor.execute('''
-            SELECT card_name, quantity
-            FROM deck_cards
-            WHERE deck_id = ? AND is_sideboard = TRUE
-            ORDER BY card_name
-        ''', (deck_id,))
-        sideboard = cursor.fetchall()
-        
-        # Check collection quantities for each card
-        def get_collection_quantity(card_name):
-            cursor.execute('''
-                SELECT SUM(quantity) FROM user_collection uc
-                JOIN cards c ON uc.card_id = c.id
-                WHERE c.name = ?
-            ''', (card_name,))
-            result = cursor.fetchone()
-            return result[0] if result[0] else 0
-        
-        # Add collection quantities to main deck
-        main_deck_with_collection = []
-        for card_name, quantity in main_deck:
-            collection_qty = get_collection_quantity(card_name)
-            main_deck_with_collection.append({
-                'name': card_name,
-                'quantity': quantity,
-                'in_collection': collection_qty
-            })
-        
-        # Add collection quantities to sideboard
-        sideboard_with_collection = []
-        for card_name, quantity in sideboard:
-            collection_qty = get_collection_quantity(card_name)
-            sideboard_with_collection.append({
-                'name': card_name,
-                'quantity': quantity,
-                'in_collection': collection_qty
-            })
-        
-        conn.close()
-        
+        highlight_missing = [c for c in request.args.get('missing', '').split('|') if c]
+        main_cards = [r for r in rows if not r['is_sideboard']]
+        side_cards = [r for r in rows if r['is_sideboard']]
+        main_total = sum(r['quantity'] for r in main_cards)
+        side_total = sum(r['quantity'] for r in side_cards)
+        required = main_total + side_total
+        owned_copies = sum(min(r['in_collection'], r['quantity']) for r in rows if not r['missing'])
+        missing_names = sorted({r['name'] for r in rows if r['missing']})
+        unique_cards = len({r['name'] for r in rows})
+
+        colors = deck_color_letters(cursor, deck_id)
+        main_groups = group_deck_rows_by_type(main_cards)
+        side_groups = group_deck_rows_by_type(side_cards)
+        curve = deck_curve(rows)
+        preview = next((r['image'] for r in sorted(rows, key=lambda r: -r['quantity']) if r['image']),
+                       image_url)
+        checks = [
+            f'{required} cards · {unique_cards} unique',
+            f"Colors: {' · '.join(colors)}" if colors else 'Colorless deck',
+            (f'{len(missing_names)} missing from your collection' if missing_names else 'All cards owned'),
+        ]
+
         deck_data = {
             'id': deck_id,
             'name': name,
@@ -1915,14 +2735,108 @@ def deck_view(deck_id):
             'image_url': image_url,
             'created_at': created_at,
             'updated_at': updated_at,
-            'main_deck': main_deck_with_collection,
-            'sideboard': sideboard_with_collection
+            'main_cards': main_cards,
+            'side_cards': side_cards,
+            'main_total': main_total,
+            'side_total': side_total,
+            'total_cards': required,
+            'unique_cards': unique_cards,
+            'owned_copies': owned_copies,
+            'missing_names': missing_names,
+            'value': deck_value,
+            'colors': colors,
+            'main_groups': main_groups,
+            'side_groups': side_groups,
+            'curve': curve,
+            'preview': preview,
+            'checks': checks,
+            'pct': (owned_copies / required * 100) if required else 0,
         }
-
-        return render_template('deck_view.html', deck=deck_data, missing_cards=missing_cards, deck_value=deck_value)
+        conn.close()
+        return render_template('deck_view.html', deck=deck_data,
+                               missing_cards=highlight_missing, currency=currency)
 
     except Exception as e:
         return f"Error loading deck: {str(e)}", 500
+
+@app.route('/deck/<int:deck_id>/cards', methods=['POST'])
+def deck_cards_route(deck_id):
+    """Add/update/remove a card row in a deck (main deck or sideboard), by name.
+
+    quantity <= 0 removes the row; otherwise the (name, sideboard) row quantity is set.
+    Missing card names are synced from Scryfall before being accepted.
+    """
+    try:
+        data = request.get_json() or {}
+        name = (data.get('name') or '').strip()
+        quantity = int(data.get('quantity', 1))
+        is_sideboard = bool(data.get('is_sideboard', False))
+        if not name:
+            return jsonify({'success': False, 'message': 'Card name is required'})
+
+        conn = sqlite3.connect(DATABASE)
+        cursor = conn.cursor()
+        cursor.execute('SELECT name FROM decks WHERE id = ?', (deck_id,))
+        if not cursor.fetchone():
+            conn.close()
+            return jsonify({'success': False, 'message': 'Deck not found'}), 404
+
+        cursor.execute('SELECT COUNT(*) FROM cards WHERE name = ?', (name,))
+        if cursor.fetchone()[0] == 0:
+            still_missing = sync_missing_cards_from_scryfall([name])
+            if still_missing:
+                conn.close()
+                return jsonify({'success': False, 'message': f'"{name}" not found on Scryfall'})
+            cursor.execute('SELECT COUNT(*) FROM cards WHERE name = ?', (name,))
+
+        if quantity <= 0:
+            cursor.execute(
+                'DELETE FROM deck_cards WHERE deck_id = ? AND card_name = ? AND is_sideboard = ?',
+                (deck_id, name, is_sideboard))
+        else:
+            cursor.execute(
+                'UPDATE deck_cards SET quantity = ? WHERE deck_id = ? AND card_name = ? AND is_sideboard = ?',
+                (quantity, deck_id, name, is_sideboard))
+            if cursor.rowcount == 0:
+                cursor.execute(
+                    'INSERT INTO deck_cards (deck_id, card_name, quantity, is_sideboard) VALUES (?, ?, ?, ?)',
+                    (deck_id, name, quantity, is_sideboard))
+
+        # Use the first added card's art as the deck cover until the user changes it.
+        cursor.execute('SELECT image_url FROM decks WHERE id = ?', (deck_id,))
+        if not cursor.fetchone()[0]:
+            cursor.execute('''
+                SELECT image_uris FROM cards
+                WHERE name = ?
+                ORDER BY (image_uris IS NULL OR image_uris = ''), created_at DESC LIMIT 1
+            ''', (name,))
+            pick = cursor.fetchone()
+            img = None
+            if pick:
+                parsed = parse_optional(pick[0]) or {}
+                img = parsed.get('art_crop') or parsed.get('normal')
+            cursor.execute(
+                'UPDATE decks SET image_url = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
+                (img, deck_id))
+        else:
+            cursor.execute('UPDATE decks SET updated_at = CURRENT_TIMESTAMP WHERE id = ?', (deck_id,))
+        conn.commit()
+
+        currency = get_currency()
+        value = get_deck_value(cursor, deck_id, currency)
+        cursor.execute(
+            'SELECT COALESCE(SUM(quantity), 0) FROM deck_cards WHERE deck_id = ? AND is_sideboard = FALSE',
+            (deck_id,))
+        main_total = cursor.fetchone()[0]
+        cursor.execute(
+            'SELECT COALESCE(SUM(quantity), 0) FROM deck_cards WHERE deck_id = ? AND is_sideboard = TRUE',
+            (deck_id,))
+        side_total = cursor.fetchone()[0]
+        conn.close()
+        return jsonify({'success': True, 'main_total': main_total, 'side_total': side_total,
+                        'value': value, 'message': 'Saved'})
+    except Exception as e:
+        return jsonify({'success': False, 'message': f'Error: {str(e)}'})
 
 @app.route('/deck/<int:deck_id>/add_to_collection', methods=['POST'])
 def add_deck_to_collection(deck_id):
@@ -2015,80 +2929,151 @@ def add_deck_to_collection(deck_id):
 
 @app.route('/deck/new')
 def deck_new():
-    """Create new deck page"""
-    deck_data = {
-        'id': None,
-        'name': '',
-        'description': '',
-        'format': '',
-        'image_url': None,
-        'created_at': '',
-        'updated_at': '',
-        'main_deck_text': '',
-        'sideboard_text': ''
-    }
-    return render_template('deck_edit.html', deck=deck_data)
+    """Create a new (empty) deck and open the builder."""
+    conn = sqlite3.connect(DATABASE)
+    cursor = conn.cursor()
+    cursor.execute("INSERT INTO decks (name, description, format) VALUES ('Untitled deck', NULL, NULL)")
+    deck_id = cursor.lastrowid
+    conn.commit()
+    conn.close()
+    return redirect(url_for('deck_view', deck_id=deck_id))
 
 @app.route('/deck/<int:deck_id>/edit')
 def deck_edit(deck_id):
-    """Edit deck page"""
-    try:
-        conn = sqlite3.connect(DATABASE)
-        cursor = conn.cursor()
-        
-        # Get deck info
-        cursor.execute('''
-            SELECT id, name, description, format, image_url, created_at, updated_at
-            FROM decks
-            WHERE id = ?
-        ''', (deck_id,))
-        deck = cursor.fetchone()
+    """Editing now happens inline on the builder page."""
+    return redirect(url_for('deck_view', deck_id=deck_id))
 
-        if not deck:
-            return "Deck not found", 404
+def get_deck_card_rows(cursor, deck_id, currency='USD'):
+    """Rows for the deck builder: per (name, main/side) with best-printing details,
+    ownership by name, price and image for the cover thumbnails."""
+    cursor.execute('''
+        SELECT dc.card_name, dc.quantity, dc.is_sideboard
+        FROM deck_cards dc
+        WHERE dc.deck_id = ?
+        ORDER BY dc.is_sideboard, dc.card_name
+    ''', (deck_id,))
+    entries = cursor.fetchall()
+    if not entries:
+        return []
+    names = list(dict.fromkeys(n for n, _, _ in entries))
+    placeholders = ','.join('?' for _ in names)
 
-        deck_id, name, description, format_name, image_url, created_at, updated_at = deck
-
-        # Get main deck cards
-        cursor.execute('''
-            SELECT card_name, quantity
-            FROM deck_cards
-            WHERE deck_id = ? AND is_sideboard = FALSE
-            ORDER BY card_name
-        ''', (deck_id,))
-        main_deck = cursor.fetchall()
-        
-        # Get sideboard cards
-        cursor.execute('''
-            SELECT card_name, quantity
-            FROM deck_cards
-            WHERE deck_id = ? AND is_sideboard = TRUE
-            ORDER BY card_name
-        ''', (deck_id,))
-        sideboard = cursor.fetchall()
-        
-        conn.close()
-        
-        # Format cards for text areas
-        main_deck_text = '\n'.join([f"{qty} {name}" for name, qty in main_deck])
-        sideboard_text = '\n'.join([f"{qty} {name}" for name, qty in sideboard])
-        
-        deck_data = {
-            'id': deck_id,
+    cursor.execute(f'''
+        SELECT name, type_line, mana_cost, cmc, prices, image_uris
+        FROM cards
+        WHERE name IN ({placeholders})
+        ORDER BY name, (image_uris IS NULL OR image_uris = ''), created_at DESC
+    ''', names)
+    best = {}
+    for name, type_line, mana_cost, cmc, prices, image_uris in cursor.fetchall():
+        if name in best:
+            continue
+        img = parse_optional(image_uris) or {}
+        best[name] = {
             'name': name,
-            'description': description,
-            'format': format_name,
-            'image_url': image_url,
-            'created_at': created_at,
-            'updated_at': updated_at,
-            'main_deck_text': main_deck_text,
-            'sideboard_text': sideboard_text
+            'type_line': type_line,
+            'mana_cost': mana_cost,
+            'cmc': cmc or 0,
+            'price': price_from_json(prices, False, currency),
+            'image': img.get('art_crop') or img.get('normal') or img.get('small'),
         }
 
-        return render_template('deck_edit.html', deck=deck_data)
-        
-    except Exception as e:
-        return f"Error loading deck for edit: {str(e)}", 500
+    cursor.execute(f'''
+        SELECT c.name, COALESCE(SUM(uc.quantity), 0)
+        FROM user_collection uc JOIN cards c ON c.id = uc.card_id
+        WHERE c.name IN ({placeholders})
+        GROUP BY c.name
+    ''', names)
+    owner = dict(cursor.fetchall())
+
+    cursor.execute(f'SELECT DISTINCT name FROM cards WHERE name IN ({placeholders})', names)
+    existing = {r[0] for r in cursor.fetchall()}
+
+    rows = []
+    for name, quantity, is_sideboard in entries:
+        info = best.get(name, {'name': name, 'type_line': '', 'mana_cost': '', 'cmc': 0,
+                               'price': None, 'image': None})
+        owned = owner.get(name, 0)
+        missing = name not in existing
+        rows.append({
+            'name': name,
+            'quantity': quantity,
+            'is_sideboard': bool(is_sideboard),
+            'type_line': info['type_line'] or 'Unknown',
+            'mana_cost': info['mana_cost'] or '',
+            'cmc': info['cmc'] or 0,
+            'price': info['price'],
+            'image': info['image'],
+            'in_collection': owned,
+            'fully_owned': (not missing) and owned >= quantity,
+            'missing': missing,
+        })
+    return rows
+
+
+DECK_TYPE_PLURAL = {
+    'Creature': 'Creatures',
+    'Planeswalker': 'Planeswalkers',
+    'Battle': 'Battles',
+    'Instant': 'Instants',
+    'Sorcery': 'Sorceries',
+    'Artifact': 'Artifacts',
+    'Enchantment': 'Enchantments',
+    'Land': 'Lands',
+    'Kindred': 'Kindreds',
+    'Tribal': 'Tribals',
+    'Phenomenon': 'Phenomena',
+    'Conspiracy': 'Conspiracies',
+}
+DECK_TYPE_ORDER = ['Creatures', 'Planeswalkers', 'Battles', 'Instants', 'Sorceries',
+                   'Artifacts', 'Enchantments', 'Lands', 'Other']
+COLOR_ORDER = 'WUBRG'
+
+
+def group_deck_rows_by_type(rows):
+    """Group deck rows by the first type word (Creature -> Creatures, ...)."""
+    buckets = {}
+    for r in rows:
+        first = (r['type_line'] or 'Unknown').split(' ')[0]
+        title = DECK_TYPE_PLURAL.get(first, first + 's')
+        buckets.setdefault(title, []).append(r)
+    ordered = []
+    seen = set()
+    for title in DECK_TYPE_ORDER:
+        if title in buckets:
+            ordered.append({'title': title, 'rows': sorted(buckets[title], key=lambda r: r['name'].lower())})
+            seen.add(title)
+    for title, rs in buckets.items():
+        if title not in seen:
+            ordered.append({'title': title, 'rows': sorted(rs, key=lambda r: r['name'].lower())})
+    return ordered
+
+
+def deck_color_letters(cursor, deck_id):
+    """Distinct WUBRG color letters across every card in a deck, in WUBRG order."""
+    letters = set()
+    for (ci,) in cursor.execute(
+            'SELECT c.color_identity FROM deck_cards dc JOIN cards c ON c.name = dc.card_name '
+            'WHERE dc.deck_id = ?', (deck_id,)).fetchall():
+        for c in (parse_optional(ci) or []):
+            if c in COLOR_ORDER:
+                letters.add(c)
+    return ''.join(sorted(letters, key=COLOR_ORDER.index)) if letters else ''
+
+
+def deck_curve(rows):
+    """Mana curve buckets (0..7+) weighted by quantity; main deck only."""
+    counts = {}
+    for r in rows:
+        if r['is_sideboard']:
+            continue
+        bucket = '7+' if (r['cmc'] or 0) > 7 else str(int(r['cmc'] or 0))
+        counts[bucket] = counts.get(bucket, 0) + r['quantity']
+    if not counts:
+        return []
+    top = max(counts.values())
+    return [{'label': b, 'count': counts[b], 'pct': round(counts[b] / top * 100)}
+            for b in ['0', '1', '2', '3', '4', '5', '6', '7+'] if b in counts]
 
 def validate_cards_in_database(card_names):
     """Check if all card names exist in the database"""
@@ -2166,6 +3151,138 @@ def parse_decklist_text(text):
     
     return cards
 
+BULK_ADD_QTY_RE = re.compile(r'^(\d+)\s+(.*)$')
+
+
+def parse_bulk_add_line(line):
+    """Parse one Bulk Add line: '[qty] Name [(SET)] [number] [*F*]'.
+
+    Returns None for blank/comment lines, else a dict with quantity, name_part,
+    set_code, collector_number and is_foil.
+    """
+    line = (line or '').strip()
+    if not line or line.startswith('#'):
+        return None
+    is_foil = '*F*' in line
+    line = line.replace('*F*', '').strip()
+
+    quantity = 1
+    m = BULK_ADD_QTY_RE.match(line)
+    if m:
+        qty = int(m.group(1))
+        if qty <= 0:
+            return None
+        quantity = qty
+        line = m.group(2).strip()
+
+    set_code = None
+    number = None
+    m = re.match(r'^(.*)\s+\(([A-Za-z0-9]+)\)\s*([0-9]*)\s*$', line)
+    if m and m.group(1).strip():
+        name_part = m.group(1).strip()
+        set_code = m.group(2).upper()
+        number = m.group(3) or None
+    else:
+        name_part = line
+    if not name_part or not re.search(r'[A-Za-z]', name_part):
+        return None
+    return {'quantity': quantity, 'name_part': name_part,
+            'set_code': set_code, 'collector_number': number, 'is_foil': is_foil}
+
+
+def resolve_bulk_add_card(name_part, set_code=None, collector_number=None):
+    """Resolve a parsed bulk-add line fragment to the best matching card row."""
+    conn = sqlite3.connect(DATABASE)
+    cursor = conn.cursor()
+    if set_code and collector_number:
+        cursor.execute('''
+            SELECT id, name, set_code FROM cards
+            WHERE name = ? COLLATE NOCASE AND set_code = ? AND collector_number = ?
+            LIMIT 1
+        ''', (name_part, set_code, collector_number))
+    elif set_code:
+        cursor.execute('''
+            SELECT id, name, set_code FROM cards
+            WHERE name = ? COLLATE NOCASE AND set_code = ?
+            ORDER BY (image_uris IS NULL OR image_uris = ''), created_at DESC
+            LIMIT 1
+        ''', (name_part, set_code))
+    else:
+        cursor.execute('''
+            SELECT id, name, set_code FROM cards
+            WHERE name = ? COLLATE NOCASE
+            ORDER BY (image_uris IS NULL OR image_uris = ''), created_at DESC
+            LIMIT 1
+        ''', (name_part,))
+    row = cursor.fetchone()
+    conn.close()
+    return row
+
+
+@app.route('/api/resolve_cards', methods=['POST'])
+def resolve_cards_api():
+    """Parse + resolve Bulk Add lines into a preview list for the add-cards modal."""
+    data = request.get_json() or {}
+    lines = data.get('lines') or []
+    force_foil = bool(data.get('force_foil'))
+    rows = []
+    for line in lines:
+        parsed = parse_bulk_add_line(line)
+        if parsed is None:
+            continue
+        is_foil = parsed['is_foil'] or force_foil
+        card = resolve_bulk_add_card(parsed['name_part'], parsed['set_code'],
+                                     parsed['collector_number'])
+        note = None
+        if not card and parsed['set_code']:
+            card = resolve_bulk_add_card(parsed['name_part'])
+            if card:
+                note = f'Printing ({parsed["set_code"]}) not found locally; matched {card[2]} instead'
+        if not card:
+            rows.append({'ok': False, 'line': line.strip(), 'quantity': parsed['quantity'],
+                         'is_foil': is_foil, 'message': 'Not found',
+                         'name_part': parsed['name_part']})
+            continue
+        rows.append({'ok': True, 'line': line.strip(), 'card_id': card[0],
+                     'name': card[1], 'set_code': card[2],
+                     'quantity': parsed['quantity'], 'is_foil': is_foil,
+                     'note': note})
+    total = sum(r['quantity'] for r in rows if r['ok'])
+    return jsonify({'success': True, 'rows': rows, 'total': total})
+
+
+@app.route('/bulk_add', methods=['POST'])
+def bulk_add_route():
+    """Add resolved cards to a binder (additive; merges into existing rows)."""
+    data = request.get_json() or {}
+    group_id = data.get('group_id')
+    cards = data.get('cards') or []
+    if group_id is None:
+        return jsonify({'success': False, 'message': 'No target binder selected'})
+    conn = sqlite3.connect(DATABASE)
+    if not conn.execute('SELECT 1 FROM collection_groups WHERE id = ?', (group_id,)).fetchone():
+        conn.close()
+        return jsonify({'success': False, 'message': 'Binder not found'}), 404
+    conn.close()
+
+    added = 0
+    for item in cards:
+        card_id = item.get('card_id')
+        qty = int(item.get('quantity', 1))
+        is_foil = bool(item.get('is_foil', False))
+        if not card_id or qty <= 0:
+            continue
+        conn = sqlite3.connect(DATABASE)
+        row = conn.execute(
+            'SELECT quantity FROM user_collection WHERE card_id = ? AND is_foil = ? AND group_id = ?',
+            (card_id, is_foil, group_id)).fetchone()
+        conn.close()
+        current = row[0] if row else 0
+        update_collection_quantity(card_id, current + qty, is_foil, group_id)
+        added += 1
+    return jsonify({'success': True, 'added': added,
+                    'message': f'Added {added} card{"s" if added != 1 else ""}'})
+
 @app.route('/update_deck', methods=['POST'])
 def update_deck():
     """Create or update a deck with validation"""
@@ -2182,6 +3299,27 @@ def update_deck():
 
         if not name:
             return jsonify({'success': False, 'message': 'Deck name is required'})
+
+        # Metadata-only save (edit modal): update the header fields, leave cards alone.
+        if 'main_deck_text' not in data and 'sideboard_text' not in data:
+            if not deck_id:
+                return jsonify({'success': False, 'message': 'Deck ID is required'})
+            conn = sqlite3.connect(DATABASE)
+            cursor = conn.cursor()
+            cursor.execute('''
+                UPDATE decks
+                SET name = ?, description = ?, format = ?, image_url = ?, updated_at = CURRENT_TIMESTAMP
+                WHERE id = ?
+            ''', (name, description, format_name, image_url, deck_id))
+            upload = request.files.get('image_file')
+            if upload and upload.filename:
+                saved_url = save_deck_image(upload, deck_id, name)
+                if saved_url:
+                    cursor.execute('UPDATE decks SET image_url = ? WHERE id = ?', (saved_url, deck_id))
+            conn.commit()
+            conn.close()
+            return jsonify({'success': True, 'message': 'Deck updated', 'deck_id': deck_id,
+                            'missing_cards': []})
 
         # Parse deck lists
         main_deck = parse_decklist_text(main_deck_text)

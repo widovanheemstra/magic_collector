@@ -3,50 +3,117 @@
 {% block title %}Magic Collector - Home{% endblock %}
 
 {% block content %}
-<div class="row">
-    <div class="col-12">
-        <div class="d-flex justify-content-between align-items-center mb-4">
-            <h1 class="d-flex align-items-center"><img src="{{ url_for('static', filename='favicon-32x32.png') }}" alt="" width="40" height="40" class="me-2"> Magic: The Gathering Collector</h1>
-            <button class="btn btn-primary" onclick="fetchSets()">
-                <i class="fas fa-download"></i> Fetch All Sets
-            </button>
-        </div>
-        
-        <div class="alert alert-info">
-            <h5><i class="fas fa-info-circle"></i> Welcome to Magic Collector!</h5>
-            <p>This application helps you collect and browse Magic: The Gathering card information using the Scryfall API.</p>
-            <ul>
-                <li><strong>Sets View:</strong> Browse all available Magic sets</li>
-                <li><strong>Cards View:</strong> View cards from specific sets</li>
-                <li><strong>Data Storage:</strong> All data is stored locally in SQLite database</li>
-            </ul>
-        </div>
+<div class="mc-page-head">
+    <div>
+        <h1 class="mc-h1 mb-1">Overview</h1>
+        <p class="mc-sub mb-0">
+            {% if total_cards %}
+            {{ "{:,}".format(total_cards) }} cards · {{ currency_symbol }}{{ "%.2f"|format(total_value) }}
+            {% else %}
+            Start building your collection
+            {% endif %}
+        </p>
     </div>
 </div>
 
-<div class="row mt-4">
-    <div class="col-12">
-        <div class="card">
-            <div class="card-header">
-                <h5><i class="fas fa-database"></i> Database Statistics</h5>
-            </div>
-            <div class="card-body">
-                <div class="row text-center">
-                    <div class="col-md-4">
-                        <h3 class="text-primary">{{ sets|length }}</h3>
-                        <p class="text-muted">Sets Stored</p>
-                    </div>
-                    <div class="col-md-4">
-                        <h3 class="text-success">{{ total_cards }}</h3>
-                        <p class="text-muted">Total Cards</p>
-                    </div>
-                    <div class="col-md-4">
-                        <h3 class="text-info">{{ cards_in_collection }}</h3>
-                        <p class="text-muted">Cards in Collection</p>
-                    </div>
-                </div>
-            </div>
-        </div>
+<div class="mc-home-stats">
+    <a class="mc-home-stat" href="{{ url_for('view_collection') }}">
+        <span class="mc-stat-num">{{ "{:,}".format(total_cards) }}</span>
+        <span>Collection cards</span>
+    </a>
+    <div class="mc-home-stat">
+        <span class="mc-stat-num">{{ currency_symbol }}{{ "%.2f"|format(total_value) }}</span>
+        <span>Collection value</span>
     </div>
+    <a class="mc-home-stat" href="{{ url_for('view_collection') }}">
+        <span class="mc-stat-num">{{ "{:,}".format(total_unique) }}</span>
+        <span>Unique cards</span>
+    </a>
+    <a class="mc-home-stat" href="{{ url_for('decks') }}">
+        <span class="mc-stat-num">{{ deck_count }}</span>
+        <span>Decks</span>
+    </a>
+    <a class="mc-home-stat" href="{{ url_for('search_cards') }}">
+        <span class="mc-stat-num">{{ "{:,}".format(db_cards) }}</span>
+        <span>Cards in database</span>
+    </a>
+</div>
+
+<div class="mc-home-actions">
+    <button type="button" class="mc-btn mc-btn-primary" onclick="openAddCardsModal()">
+        <i data-lucide="plus" width="15" height="15"></i> Add cards
+    </button>
+    <a class="mc-btn mc-btn-secondary" href="{{ url_for('deck_new') }}">
+        <i data-lucide="layers" width="15" height="15"></i> New deck
+    </a>
+    <a class="mc-btn mc-btn-secondary" href="{{ url_for('search_cards') }}">
+        <i data-lucide="search" width="15" height="15"></i> Search
+    </a>
+    <a class="mc-btn mc-btn-secondary" href="{{ url_for('view_sets') }}">
+        <i data-lucide="library" width="15" height="15"></i> Browse sets
+    </a>
+</div>
+
+<div class="mc-home-cols">
+    <section class="mc-home-panel">
+        <h2 class="mc-h2">Binders</h2>
+        {% if sidebar_default_binder %}
+        <a class="mc-home-binder" href="{{ url_for('view_collection_group', group_id=sidebar_default_binder.id) }}">
+            <i data-lucide="book-open" width="18" height="18"></i>
+            <span class="mc-home-binder-name">{{ sidebar_default_binder.name }}</span>
+            <span class="mc-muted">{{ sidebar_default_binder.card_count }} cards</span>
+        </a>
+        {% endif %}
+        {% for b in sidebar_binders %}
+        <a class="mc-home-binder" href="{{ url_for('view_collection_group', group_id=b.id) }}">
+            <i data-lucide="layers" width="18" height="18"></i>
+            <span class="mc-home-binder-name">{{ b.name }}</span>
+            <span class="mc-muted">{{ b.card_count }} cards</span>
+        </a>
+        {% endfor %}
+        {% if not sidebar_binders %}
+        <p class="mc-muted small mb-0">Custom binders show up here. Rename a binder or use “New binder” in the sidebar.</p>
+        {% endif %}
+    </section>
+
+    <section class="mc-home-panel">
+        <h2 class="mc-h2">Recently added</h2>
+        {% if recent_cards %}
+        <div class="mc-home-recent">
+            {% for card in recent_cards %}
+            <a class="mc-recent-card" href="{{ url_for('view_card_detail', card_id=card.id) }}" title="{{ card.name }}">
+                {% if card.image_uris %}
+                <img src="{{ card.image_uris.get('small') or card.image_uris.get('normal') }}" loading="lazy" alt="{{ card.name }}">
+                {% else %}
+                <span class="mc-recent-fallback">{{ card.name[:1] }}</span>
+                {% endif %}
+            </a>
+            {% endfor %}
+        </div>
+        {% else %}
+        <p class="mc-muted small mb-0">Cards you add will appear here.</p>
+        {% endif %}
+    </section>
+
+    <section class="mc-home-panel">
+        <h2 class="mc-h2">Recent sets</h2>
+        {% if recent_sets %}
+        <ul class="mc-home-sets">
+            {% for s in recent_sets %}
+            <li>
+                <a href="{{ url_for('view_cards_by_set', set_code=s.code) }}">
+                    {% if s.icon_svg_uri %}<img src="{{ s.icon_svg_uri }}" width="26" height="26" alt="" loading="lazy">{% endif %}
+                    <span class="mc-home-set-name">{{ s.name }}</span>
+                    <span class="mc-muted">
+                        {{ s.released_at }} · {{ s.synced_count }} card{{ 's' if s.synced_count != 1 else '' }}
+                    </span>
+                </a>
+            </li>
+            {% endfor %}
+        </ul>
+        {% else %}
+        <p class="mc-muted small mb-0">No sets synced yet — use “Sync sets from Scryfall” in <a href="{{ url_for('view_settings') }}">Settings</a>.</p>
+        {% endif %}
+    </section>
 </div>
 {% endblock %}

@@ -64,6 +64,10 @@ _Avoid_: set, set bucket
 A group not tied to a set — a theme, a list, or a deck's cards — that you name and may image yourself.
 _Avoid_: folder, list
 
+**Binder**:
+The UI label for a custom group — a named bucket not tied to a set. Custom groups are shown as "Binders" under Collection; the underlying model is still a custom group.
+_Avoid_: folder, list
+
 **My Collection**:
 The default group every card starts in. Created automatically and not deletable.
 _Avoid_: default collection, home

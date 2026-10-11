@@ -1,169 +1,136 @@
 {% extends "base.html" %}
 
-{% block title %}{{ set_info[2] if set_info else 'Unknown Set' }} Cards - Magic Collector{% endblock %}
+{% block title %}{{ set_info.name }} Cards - Magic Collector{% endblock %}
+
+{% set is_owned = request.args.get('owned') %}
 
 {% block content %}
-<div class="row">
-    <div class="col-12">
-        <div class="d-flex justify-content-between align-items-center mb-4">
-            <div>
-                <h1><i class="fas fa-cards-blank"></i> {{ set_info[2] if set_info else 'Unknown Set' }}</h1>
-                {% if set_info %}
-                <p class="text-muted">{{ set_info[3] }} • {{ set_info[4] or 'Unknown Release Date' }}</p>
-                {% endif %}
-            </div>
-            <div>
-                {% if set_info %}
-                <button class="btn btn-primary" onclick="fetchCards('{{ set_info[1] }}')">
-                    <i class="fas fa-sync"></i> Refresh Cards
-                </button>
-                {% endif %}
-                <a href="/sets" class="btn btn-outline-secondary">
-                    <i class="fas fa-arrow-left"></i> Back to Sets
-                </a>
-            </div>
+<div class="mc-page-head">
+    <div class="d-flex align-items-center gap-3">
+        {% if set_info.icon_svg_uri %}
+        <img src="{{ set_info.icon_svg_uri }}" alt="" class="mc-set-icon" width="34" height="34">
+        {% endif %}
+        <div>
+            <nav class="mc-breadcrumb">
+                <a href="{{ url_for('view_sets') }}">Sets</a>
+                <span>/</span>
+                <span>{{ set_info.name }}</span>
+            </nav>
+            <h1 class="mc-h1 mb-1">{{ set_info.name }}</h1>
+            <p class="mc-sub mb-0">
+                {{ set_info.set_type }}{% if set_info.released_at %} · {{ set_info.released_at[:10] }}{% endif %}
+                · {{ "{:,}".format(cards|length) }} cards in set · {{ "{:,}".format(total_owned) }} owned
+            </p>
         </div>
     </div>
-</div>
-
-{% if set_info %}
-<div class="row mb-4">
-    <div class="col-12">
-        <div class="card">
-            <div class="card-body">
-                <div class="row">
-                    <div class="col-md-6">
-                        <h5>Set Information</h5>
-                        <p><strong>Code:</strong> {{ set_info[1] }}</p>
-                        <p><strong>Type:</strong> {{ set_info[3] }}</p>
-                        <p><strong>Released:</strong> {{ set_info[4] or 'Unknown' }}</p>
-                        <p><strong>Cards:</strong> {{ set_info[8] or 0 }}</p>
-                        {% if set_info[5] %}
-                        <p><strong>Block:</strong> {{ set_info[6] or set_info[5] }}</p>
-                        {% endif %}
-                    </div>
-                    <div class="col-md-6">
-                        <h5>Set Details</h5>
-                        {% if set_info[9] %}
-                        <span class="badge bg-info me-2">Digital</span>
-                        {% endif %}
-                        {% if set_info[10] %}
-                        <span class="badge bg-warning me-2">Foil Only</span>
-                        {% endif %}
-                        {% if set_info[11] %}
-                        <span class="badge bg-success me-2">Non-Foil Only</span>
-                        {% endif %}
-                        {% if set_info[16] %}
-                        <p><strong>Printed Size:</strong> {{ set_info[16] }}</p>
-                        {% endif %}
-                    </div>
-                </div>
-            </div>
-        </div>
+    <div class="mc-page-actions">
+        <button class="mc-btn mc-btn-secondary" type="button" onclick="fetchCards('{{ set_info.code }}')">
+            <i data-lucide="refresh-cw" width="15" height="15"></i> Refresh cards
+        </button>
+        <button class="mc-btn mc-btn-primary" type="button" onclick="addSetToCollection('{{ set_info.code }}', this)">
+            <i data-lucide="plus" width="15" height="15"></i> Add set to collection
+        </button>
     </div>
-</div>
-{% endif %}
-
-<div class="row">
-    {% if cards %}
-        {% for card in cards %}
-        <div class="col-md-6 col-lg-4 mb-4">
-            <div class="card h-100 card-tile" style="cursor: pointer;" onclick="viewCard('{{ card[0] }}')">
-                <div class="card-img-top bg-light d-flex justify-content-center align-items-center" style="min-height: 200px; gap: 0.5rem;">
-                    {% set image_data = card[37]|from_json %}
-                    {% set faces = card[38]|from_json %}
-                    {% set top_src = image_data.normal or image_data.small or '' %}
-                    {% if top_src %}
-                    <img src="{{ top_src }}" class="card-image" alt="{{ card[1] }}" style="max-height: 200px; object-fit: contain;">
-                    {% elif faces and faces|length > 1 %}
-                    {# Double-faced card: show both faces next to each other #}
-                    {% for face in faces %}
-                    {% set face_image = face.image_uris or {} %}
-                    {% if face_image.normal or face_image.small %}
-                    <img src="{{ face_image.normal or face_image.small }}" class="card-image" alt="{{ face.name or card[1] }}" style="max-height: 200px; max-width: 50%; object-fit: contain;">
-                    {% endif %}
-                    {% endfor %}
-                    {% elif faces and faces[0].image_uris %}
-                    <img src="{{ faces[0].image_uris.normal or faces[0].image_uris.small or '' }}" class="card-image" alt="{{ card[1] }}" style="max-height: 200px; object-fit: contain;">
-                    {% else %}
-                    <i class="fas fa-image fa-3x text-muted"></i>
-                    {% endif %}
-                </div>
-                <div class="card-body">
-                    <h6 class="card-title">{{ card[1] }}</h6>
-                    <p class="card-text">
-                        <small class="text-muted">
-                            <strong>Mana Cost:</strong> {{ card[2] or 'None' }}<br>
-                            <strong>Type:</strong> {{ card[4] or 'Unknown' }}<br>
-                            <strong>Rarity:</strong> {{ card[24] or 'Unknown' }}<br>
-                            <strong>Collector #:</strong> {{ card[23] or 'Unknown' }}
-                        </small>
-                    </p>
-                </div>
-            </div>
-        </div>
-        {% endfor %}
-    {% else %}
-        <div class="col-12">
-            <div class="alert alert-warning text-center">
-                <h4><i class="fas fa-exclamation-triangle"></i> No Cards Available</h4>
-                <p>No cards have been loaded for this set yet. Click the "Refresh Cards" button to fetch cards from the Scryfall API.</p>
-                {% if set_info %}
-                <button class="btn btn-primary" onclick="fetchCards('{{ set_info[1] }}')">
-                    <i class="fas fa-download"></i> Fetch Cards
-                </button>
-                {% endif %}
-            </div>
-        </div>
-    {% endif %}
 </div>
 
 {% if cards %}
-<div class="row mt-4">
-    <div class="col-12">
-        <div class="card">
-            <div class="card-header">
-                <h5><i class="fas fa-chart-bar"></i> Cards Summary</h5>
-            </div>
-            <div class="card-body">
-                <div class="row text-center">
-                    <div class="col-md-3">
-                        <h4 class="text-primary">{{ cards|length }}</h4>
-                        <p class="text-muted">Total Cards</p>
-                    </div>
-                    <div class="col-md-3">
-                        <h4 class="text-success">{{ cards|selectattr('24', 'equalto', 'mythic')|list|length }}</h4>
-                        <p class="text-muted">Mythic Rares</p>
-                    </div>
-                    <div class="col-md-3">
-                        <h4 class="text-info">{{ cards|selectattr('24', 'equalto', 'rare')|list|length }}</h4>
-                        <p class="text-muted">Rares</p>
-                    </div>
-                    <div class="col-md-3">
-                        <h4 class="text-warning">{{ cards|selectattr('24', 'equalto', 'uncommon')|list|length }}</h4>
-                        <p class="text-muted">Uncommons</p>
-                    </div>
-                </div>
-            </div>
+<div class="mc-toolbar">
+    <div class="mc-search">
+        <i data-lucide="search" width="15" height="15"></i>
+        <input type="search" id="cardSearch" placeholder="Filter cards…" oninput="filterCards()" autocomplete="off">
+    </div>
+    <div class="mc-toolbar-right">
+        <div class="mc-seg" role="group" aria-label="Sort">
+            <a class="mc-seg-opt {% if sort_mode == 'collector' %}is-active{% endif %}" href="?sort=collector{% if is_owned %}&owned=1{% endif %}">Collector #</a>
+            <a class="mc-seg-opt {% if sort_mode == 'name' %}is-active{% endif %}" href="?sort=name{% if is_owned %}&owned=1{% endif %}">Name</a>
+            <a class="mc-seg-opt {% if sort_mode == 'price' %}is-active{% endif %}" href="?sort=price{% if is_owned %}&owned=1{% endif %}">Price</a>
+        </div>
+        <div class="mc-seg" role="group" aria-label="Owned filter">
+            <a class="mc-seg-opt {% if not is_owned %}is-active{% endif %}" href="?sort={{ sort_mode }}">All</a>
+            <a class="mc-seg-opt {% if is_owned %}is-active{% endif %}" href="?sort={{ sort_mode }}&owned=1">Owned</a>
         </div>
     </div>
 </div>
+
+<div class="mc-grid mc-grid-cards" id="cardsGrid" style="--cols:7;">
+    {% for card in cards %}
+    {% set link_url = url_for('view_card_detail', card_id=card.id, from='set', set_code=set_info.code) %}
+    {% set show_add = True %}
+    {% include "_card_tile.html" %}
+    {% endfor %}
+</div>
+{% else %}
+<div class="mc-empty">
+    <p class="mb-2">No cards loaded for this set yet.</p>
+    <button class="mc-btn mc-btn-primary" type="button" onclick="fetchCards('{{ set_info.code }}')">
+        <i data-lucide="download" width="15" height="15"></i> Fetch cards
+    </button>
+</div>
 {% endif %}
 
-<style>
-.card-tile {
-    transition: transform 0.2s ease-in-out, box-shadow 0.2s ease-in-out;
-}
-
-.card-tile:hover {
-    transform: translateY(-5px);
-    box-shadow: 0 8px 25px rgba(0,0,0,0.15);
-}
-</style>
-
 <script>
-function viewCard(cardId) {
-    window.location.href = `/card/${cardId}?from=set&set_code={{ set_info[1] if set_info else '' }}`;
+function filterCards() {
+    const q = document.getElementById('cardSearch').value.trim().toLowerCase();
+    let shown = 0;
+    document.querySelectorAll('#cardsGrid [data-filter-name]').forEach(el => {
+        const match = !q || el.dataset.filterName.includes(q);
+        el.style.display = match ? '' : 'none';
+        if (match) shown++;
+    });
 }
+
+function fetchCards(setCode) {
+    const btn = event.target.closest('button');
+    if (btn) { btn.disabled = true; }
+    fetch('/fetch_cards/' + setCode, { method: 'POST' })
+        .then(r => r.json())
+        .then(d => {
+            if (d.success) window.location.reload();
+            else alert('Error: ' + d.message);
+        })
+        .catch(e => alert('Error: ' + e.message));
+}
+
+function addSetToCollection(setCode, btn) {
+    if (!confirm('Add 1x of every card in this set to your collection? Cards will be fetched from Scryfall if not yet loaded.')) return;
+    const original = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = '<i data-lucide="loader"></i> Adding…';
+    renderLucideIcons();
+    fetch('/add_set_to_collection/' + setCode, { method: 'POST' })
+        .then(r => r.json())
+        .then(d => {
+            if (d.success && d.group_id) (window.spaNavigate || (u => { window.location.href = u; }))('/collection/' + d.group_id);
+            else alert(d.message || 'Failed');
+        })
+        .catch(e => { alert('Error: ' + e.message); btn.disabled = false; btn.innerHTML = original; renderLucideIcons(); });
+}
+
+document.querySelectorAll('#cardsGrid .mc-quick-add').forEach(function(btn) {
+    btn.addEventListener('click', function(e) {
+        e.stopPropagation();
+        e.preventDefault();
+        const cardId = btn.dataset.cardId;
+        fetch('/add_to_collection', {
+            method: 'POST', headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ card_id: cardId, quantity: 1, is_foil: false })
+        }).then(r => r.json()).then(d => {
+            if (!d.success) { alert(d.message); return; }
+            let badge = document.getElementById('badge-' + cardId + '-0');
+            if (!badge) {
+                const frame = btn.closest('.mc-card-frame');
+                let wrap = frame.querySelector('.mc-qty-badges');
+                if (!wrap) { wrap = document.createElement('div'); wrap.className = 'mc-qty-badges'; frame.appendChild(wrap); }
+                badge = document.createElement('span');
+                badge.className = 'mc-qty-badge';
+                badge.id = 'badge-' + cardId + '-0';
+                wrap.prepend(badge);
+            }
+            const m = badge.textContent.match(/(\d+)/);
+            badge.textContent = ((m ? parseInt(m[1]) : 0) + 1) + '×';
+            badge.style.display = '';
+        });
+    });
+});
 </script>
 {% endblock %}
